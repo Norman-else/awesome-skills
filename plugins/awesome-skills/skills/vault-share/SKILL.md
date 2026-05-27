@@ -9,22 +9,26 @@ description: Securely send a Vault secret or dynamic database credential to a Sl
 
 Use this skill to route a Vault secret directly to a Slack DM while keeping the secret out of the conversation. User-supplied requests are authoritative: when the current user prompt explicitly identifies the Vault target and Slack recipient, parse and execute that request directly without checking `database-credentials-ops`. Only check `database-credentials-ops` for the newest DB credential workflow request when the user asks to process the latest DB credential request, asks to check Slack, or does not provide enough request details to resolve the target and recipient. Use `mcp__mcp_vault__vault_login` first whenever the resolved request names an environment, or when the share tool reports that authentication is missing. Then use `mcp__mcp_vault__vault_share_secret` to send the secret. The response should confirm delivery status without printing secret material.
 
+When this skill is invoked with no extra user-provided target, recipient, or path, treat the invocation itself as a request to process the latest unprocessed DB credential workflow request from `database-credentials-ops`. Do not ask the user to provide a one-line request first.
+
 ## Workflow
 
 1. Parse the current user prompt first.
 2. If the prompt explicitly resolves the Vault target and Slack recipient with high confidence, skip Slack DB request preflight and use the user-provided request as the resolved input.
-3. Run the Slack DB request preflight in `database-credentials-ops` only when the user asks to process the latest DB credential request, asks to check Slack, or leaves the Vault target or Slack recipient unresolved.
-4. Extract the Vault target and Slack recipient from the newest valid Slack workflow request only when preflight is required, then overlay any explicit user-supplied fields as intentional overrides.
-5. Accept natural language, slash-style input, or terse positional input such as `dev db item-management-service Norman` when the user prompt or required Slack preflight does not provide every required field.
-6. If either the Vault path or Slack user is missing after combining available fields, ask only for the missing field.
-7. Normalize environment, secret type, mount, and path.
-8. If the resolved request names `dev`, `sat`, `prod`, or `local`, call `mcp__mcp_vault__vault_login` for that environment before sharing.
-9. Call `mcp__mcp_vault__vault_share_secret`.
-10. If the share fails with an authentication error and an environment is known, call `mcp__mcp_vault__vault_login` for that environment and retry the share once.
-11. Report only whether the share succeeded and which Slack user received it.
+3. If the invocation has no explicit target and recipient, immediately run the Slack DB request preflight in `database-credentials-ops`; do not ask for shorthand examples first.
+4. Run the Slack DB request preflight in `database-credentials-ops` when the user asks to process the latest DB credential request, asks to check Slack, or leaves the Vault target or Slack recipient unresolved.
+5. Extract the Vault target and Slack recipient from the newest valid Slack workflow request only when preflight is required, then overlay any explicit user-supplied fields as intentional overrides.
+6. Accept natural language, slash-style input, or terse positional input such as `dev db item-management-service Norman` when the user prompt or required Slack preflight does not provide every required field.
+7. If either the Vault path or Slack user is missing after combining available fields, ask only for the missing field.
+8. Normalize environment, secret type, mount, and path.
+9. If the resolved request names `dev`, `sat`, `prod`, or `local`, call `mcp__mcp_vault__vault_login` for that environment before sharing.
+10. Call `mcp__mcp_vault__vault_share_secret`.
+11. If the share fails with an authentication error and an environment is known, call `mcp__mcp_vault__vault_login` for that environment and retry the share once.
+12. Report only whether the share succeeded and which Slack user received it.
 
 ## Slack DB Request Preflight
 
+- Empty skill invocation means Slack DB request preflight. Do not respond with input examples before calling `mcp__mcp_vault__vault_get_latest_db_credential_request`.
 - Do not call `mcp__mcp_vault__vault_get_latest_db_credential_request` when the current user prompt already provides an explicit, high-confidence Vault target and Slack recipient.
 - Before any call to `mcp__mcp_vault__vault_login` or `mcp__mcp_vault__vault_share_secret` for a Slack-derived request, call `mcp__mcp_vault__vault_get_latest_db_credential_request` with `include_processed_status: true`.
 - Never use Slack connector tools such as `slack_read_channel`, `slack_search_public_and_private`, `slack_search_public`, `slack_read_thread`, or channel search tools for this workflow. The dedicated Vault MCP tool is the privacy boundary: it reads Slack server-side and returns only structured fields, never raw Slack messages or credential values.

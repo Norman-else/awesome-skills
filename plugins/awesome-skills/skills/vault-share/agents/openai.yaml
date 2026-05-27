@@ -1,7 +1,7 @@
 interface:
   display_name: "Vault Share"
   short_description: "Privately DM a Vault secret via Slack."
-  default_prompt: "Use $vault-share to automatically handle the latest DB credential request from #database-credentials-ops. If explicit target and recipient input is provided, use that instead."
+  default_prompt: "Automatically process the latest unprocessed DB credential request from #database-credentials-ops using $vault-share. Do not ask for target input first."
 
 dependencies:
   tools:
