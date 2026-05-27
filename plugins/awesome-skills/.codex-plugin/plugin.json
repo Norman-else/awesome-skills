@@ -28,8 +28,8 @@
     "websiteURL": "https://github.com/Norman-else/awesome-skills",
     "defaultPrompt": [
       "Use $vault-share to share a Vault secret safely.",
-      "Use $clean-my-mac to find safe cleanup candidates.",
-      "Use $gh-fix-ci to inspect failing GitHub checks."
+      "Use $vault-web-ui to open the Vault Web UI.",
+      "Use $clean-my-mac to find safe cleanup candidates."
     ],
     "brandColor": "#2563EB"
   }

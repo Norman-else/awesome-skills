@@ -1,6 +1,6 @@
 ---
 name: vault-share
-description: Securely send a Vault secret or dynamic database credential to a Slack user by private DM without exposing the secret content in chat. Use when Codex needs to share credentials from Vault with a teammate in Slack, especially for requests like "share secret X with Y", "DM the db creds to Alice", "把 dev db 发给 Norman", "处理最新 DB 凭据申请", or terse slash-style input such as "vault-share ENV TYPE TARGET USER" and "vault-share PATH USER".
+description: Securely send a Vault secret or dynamic database credential to a Slack user by private DM without exposing the secret content in chat. Use when Codex needs to share credentials from Vault with a teammate in Slack, especially for requests like "share secret X with Y", "DM the db creds to Alice", "send dev db to Norman", "process the latest DB credential request", or terse slash-style input such as "vault-share ENV TYPE TARGET USER" and "vault-share PATH USER".
 ---
 
 # Vault Share
@@ -50,7 +50,7 @@ Use this skill to route a Vault secret directly to a Slack DM while keeping the 
 - Recognize environments from the fixed set `dev`, `sat`, `prod`, and `local`.
 - Recognize secret types from the fixed set `db` and `kv`.
 - Recognize Slack workflow fields from message text or structured blocks, especially `Database: SERVICE`, `Environment: ENV`, and `Please provide the DB credential to @USER`.
-- Treat filler words such as `send`, `share`, `to`, `给`, `发给`, and `发` as optional noise.
+- Treat filler words such as `send`, `share`, and `to` as optional noise.
 - Treat the remaining unmatched token or token tail as the Slack user only when that interpretation is unambiguous.
 - If two interpretations are plausible, do not send anything yet. Ask a short clarification question instead.
 
@@ -88,10 +88,10 @@ Use this skill to route a Vault secret directly to a Slack DM while keeping the 
 
 ## Examples
 
-- User request: `处理最新 DB 凭据申请`
+- User request: `process the latest DB credential request`
   Slack preflight finds a `database-credentials-ops` workflow message directed at the current user: `Please provide the DB credential to @Hansen Huang`, `Database: item-management-service`, `Environment: prod`.
   Action: call `mcp__mcp_vault__vault_login` with `environment: prod`, then call `mcp__mcp_vault__vault_share_secret` with `secret_type: db`, `path: database/creds/item-management-service`, `slack_user: Hansen Huang`.
-- User request: `处理最新 DB 凭据申请`
+- User request: `process the latest DB credential request`
   Slack preflight finds the newest matching request, then finds a later Vault notification that database credentials were sent to the same recipient for the same environment by the current user.
   Action: stop and report that the latest request was already processed. Do not call any Vault tool.
 - User request: `dev db item-management-service Norman`
@@ -100,7 +100,7 @@ Use this skill to route a Vault secret directly to a Slack DM while keeping the 
   Action: accept the out-of-order form only because the parse is still unambiguous, then call `mcp__mcp_vault__vault_login` with `environment: dev` and share `database/creds/item-management-service` with `Norman`.
 - User request: `db Norman item-management-service`
   Action: do not guess. Ask whether `Norman` is the Slack user and whether the intended environment is `dev`, `sat`, `prod`, or `local`.
-- User request: `把 warehouse-management-service 发给 hansen`
+- User request: `share warehouse-management-service with hansen`
   Action: call `mcp__mcp_vault__vault_share_secret` with `secret_type: kv`, `mount_point: secret`, `path: warehouse-management-service`, `slack_user: hansen`.
 - User request: `share database/creds/reporting-api to alice`
   Action: call `mcp__mcp_vault__vault_share_secret` with `secret_type: db`, `path: database/creds/reporting-api`, `slack_user: alice`.
