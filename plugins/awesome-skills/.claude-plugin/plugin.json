@@ -1,0 +1,10 @@
+{
+  "name": "awesome-skills",
+  "description": "Norman's shared skill pack for Codex and Claude Code.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Norman",
+    "url": "https://github.com/Norman-else"
+  },
+  "homepage": "https://github.com/Norman-else/awesome-skills"
+}

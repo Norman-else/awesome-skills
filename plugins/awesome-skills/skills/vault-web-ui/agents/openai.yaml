@@ -1,0 +1,10 @@
+interface:
+  display_name: "Vault Web UI"
+  short_description: "Open the Vault Web UI in browser"
+  default_prompt: "Use $vault-web-ui to open the Vault Web UI in the browser for interactive inspection."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "mcp-vault"
+      description: "Vault MCP server"

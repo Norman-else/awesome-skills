@@ -1,0 +1,4 @@
+interface:
+  display_name: "Clean My Mac"
+  short_description: "Free disk space by safely cleaning Mac junk"
+  default_prompt: "Use $clean-my-mac to scan my Mac for safe cleanup candidates, show a dry-run summary, and wait for confirmation before deleting anything."

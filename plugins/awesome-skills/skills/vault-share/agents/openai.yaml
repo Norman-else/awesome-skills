@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vault Share"
+  short_description: "Privately DM a Vault secret via Slack."
+  default_prompt: "Use $vault-share to handle the latest DB credential request from #database-credentials-ops, or provide terse input like `dev db item-management-service Norman` to send a Vault secret privately in Slack."
