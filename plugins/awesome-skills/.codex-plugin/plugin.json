@@ -1,6 +1,6 @@
 {
   "name": "awesome-skills",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Norman's shared skill pack for Codex and Claude Code.",
   "author": {
     "name": "Norman",
@@ -27,6 +27,7 @@
     ],
     "websiteURL": "https://github.com/Norman-else/awesome-skills",
     "defaultPrompt": [
+      "Use $remote-github-pr to make a small GitHub repo change with gh only and open a PR without cloning locally.",
       "Use $vault-share to share a Vault secret safely.",
       "Use $vault-web-ui to open the Vault Web UI.",
       "Use $clean-my-mac to find safe cleanup candidates."

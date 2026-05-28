@@ -1,0 +1,4 @@
+interface:
+  display_name: "Remote GitHub PR"
+  short_description: "Edit GitHub repos remotely with gh and open a PR."
+  default_prompt: "Use $remote-github-pr to make a small GitHub repo change with gh only, without cloning locally, then create a pull request after verifying the final diff."

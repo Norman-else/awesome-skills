@@ -9,6 +9,7 @@ copies under `~/.codex/skills` and `~/.claude/skills`.
 ## Included skills
 
 - `clean-my-mac`
+- `remote-github-pr`
 - `vault-share`
 - `vault-web-ui`
 
