@@ -10,6 +10,21 @@ watches the resulting deploy job. It is project-agnostic: it discovers the
 CircleCI project, workflow, and job names automatically, so the same skill works
 across every repo whose pipeline gates deploys behind a manual approval.
 
+## Invoking with no input IS a deploy request
+
+When this skill is invoked with no extra prompt or arguments, treat the
+invocation itself as "deploy now". Do NOT ask the user for a prompt or a target
+environment first — go straight to running the script (in the background) and
+let environment resolution handle the rest:
+
+- Run `deploy.sh` with no environment argument.
+- If the repo has exactly one deploy environment, it deploys that one.
+- If it has several, the script exits **10** and prints `DEPLOY_ENVS=...`; only
+  then ask the user which environment (with AskUserQuestion) and re-run with it.
+
+A prompt/argument is optional — it only narrows the target when given (e.g.
+"deploy to sat"). Its absence is not a reason to stop and ask.
+
 ## When this triggers
 
 Direct requests to deploy the current project to some environment:
