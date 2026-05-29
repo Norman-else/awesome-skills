@@ -1,0 +1,38 @@
+{
+  "name": "awesome-skills",
+  "version": "0.1.5",
+  "description": "Norman's shared skill pack for Codex and Claude Code.",
+  "author": {
+    "name": "Norman",
+    "url": "https://github.com/Norman-else"
+  },
+  "homepage": "https://github.com/Norman-else/awesome-skills",
+  "repository": "https://github.com/Norman-else/awesome-skills",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "codex",
+    "claude-code",
+    "automation"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Awesome Skills",
+    "shortDescription": "Shared local skills for Codex and Claude Code.",
+    "longDescription": "A portable skill pack that keeps Norman's Codex and Claude Code skills in one versioned repository instead of copying them between client-specific directories.",
+    "developerName": "Norman",
+    "category": "Productivity",
+    "capabilities": [
+      "Skills"
+    ],
+    "websiteURL": "https://github.com/Norman-else/awesome-skills",
+    "defaultPrompt": [
+      "Use $remote-github-pr to make a small GitHub repo change with gh only and open a PR without cloning locally.",
+      "Use $vault-share to share a Vault secret safely.",
+      "Use $vault-web-ui to open the Vault Web UI.",
+      "Use $clean-my-mac to find safe cleanup candidates.",
+      "Use $ci-deploy to deploy the current project to an environment via CircleCI."
+    ],
+    "brandColor": "#2563EB"
+  }
+}
