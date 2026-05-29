@@ -11,10 +11,23 @@
       "name": "awesome-skills",
       "description": "Shared skill pack for Codex and Claude Code.",
       "source": "./plugins/awesome-skills",
-      "version": "0.1.5",
+      "version": "0.1.6",
       "category": "productivity",
       "tags": [
         "skills",
+        "codex",
+        "claude-code"
+      ]
+    },
+    {
+      "name": "vault-skills",
+      "description": "Optional Vault skills (share secrets to Slack, open Vault Web UI). Install separately; requires the Vault MCP integration.",
+      "source": "./plugins/vault-skills",
+      "version": "0.1.0",
+      "category": "productivity",
+      "tags": [
+        "skills",
+        "vault",
         "codex",
         "claude-code"
       ]

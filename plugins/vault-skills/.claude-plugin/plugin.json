@@ -1,0 +1,10 @@
+{
+  "name": "vault-skills",
+  "description": "Optional Vault skills (share secrets to Slack, open Vault Web UI). Requires the Vault MCP integration.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Norman",
+    "url": "https://github.com/Norman-else"
+  },
+  "homepage": "https://github.com/Norman-else/awesome-skills"
+}
