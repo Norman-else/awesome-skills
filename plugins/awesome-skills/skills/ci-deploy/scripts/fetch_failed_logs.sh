@@ -26,9 +26,9 @@ fi
 
 # ─── token ────────────────────────────────────────────────────────────────────
 if [[ -n "${CIRCLECI_TOKEN:-}" ]]; then
-  CC_TOKEN="$CIRCLECI_TOKEN"
+  CC_TOKEN="$(printf '%s' "$CIRCLECI_TOKEN" | tr -d '\r')"
 elif [[ -f "$HOME/.circleci/cli.yml" ]]; then
-  CC_TOKEN=$(awk '/^token:/ {print $2}' "$HOME/.circleci/cli.yml" || true)
+  CC_TOKEN=$(awk '/^token:/ {print $2}' "$HOME/.circleci/cli.yml" | tr -d '\r' || true)
 fi
 if [[ -z "${CC_TOKEN:-}" ]]; then
   echo "error: no CircleCI token found. Set CIRCLECI_TOKEN or run 'circleci setup'." >&2
@@ -36,7 +36,7 @@ if [[ -z "${CC_TOKEN:-}" ]]; then
 fi
 
 # ─── project slug (v1.1 form: github/OWNER/REPO) from git remote ──────────────
-REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+REMOTE_URL=$(git remote get-url origin 2>/dev/null | tr -d '\r' || true)
 PROJECT_V1=$(REMOTE_URL="$REMOTE_URL" python3 -c "
 import os, re, sys
 url = os.environ.get('REMOTE_URL', '').strip()
@@ -45,7 +45,7 @@ if not m:
     sys.exit(0)
 host, owner_repo = m.group(1), m.group(2)
 print(('bitbucket/' if 'bitbucket' in host else 'github/') + owner_repo)
-")
+" | tr -d '\r')
 if [[ -z "$PROJECT_V1" ]]; then
   echo "error: could not derive the project slug from origin remote ('$REMOTE_URL')." >&2
   exit 1
@@ -70,7 +70,7 @@ for j in data.get('items', []):
         rows.append((num, n))
 for num, n in rows:
     print('%s\t%s' % (num, n))
-")
+" | tr -d '\r')
 
 if [[ -z "$JOB_ROWS" ]]; then
   if [[ -n "$JOB_NAME" ]]; then
