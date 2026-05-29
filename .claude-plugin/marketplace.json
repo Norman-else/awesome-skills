@@ -11,7 +11,7 @@
       "name": "awesome-skills",
       "description": "Shared skill pack for Codex and Claude Code.",
       "source": "./plugins/awesome-skills",
-      "version": "0.1.3",
+      "version": "0.1.4",
       "category": "productivity",
       "tags": [
         "skills",

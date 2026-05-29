@@ -1,0 +1,303 @@
+#!/usr/bin/env bash
+# ci-deploy — approve a CircleCI manual-approval gate and watch the deploy job.
+#
+# Project-agnostic: detects the CircleCI project, workflow, and the
+# approval/deploy/test jobs automatically from the current git repo and the
+# CircleCI API. No per-repo config file required.
+#
+# Usage:
+#   deploy.sh [<env>] [options]
+#
+#   <env>                  Target environment (e.g. dev, sat, staging, prod).
+#                          If omitted and the workflow has exactly one deploy
+#                          environment, it is used. If multiple exist, the
+#                          script exits 10 and prints the list so the caller
+#                          can ask the user which one.
+#
+# Options:
+#   --sha <sha>            Deploy a specific commit (default: current branch's
+#                          remote tip).
+#   --workflow <name>      Pin the workflow when a pipeline has several.
+#   --deploy-job <name>    Explicit deploy job (used when detection is ambiguous).
+#   --approval-job <name>  Explicit approval gate job.
+#   --test-job <name>      Restrict the "build failed" check to this one job.
+#   --no-autofix           Accepted for parity; the auto-fix loop lives in the
+#                          agent, not this script.
+#
+# Behaviour mirrors the original deploy-dev flow: resolve SHA -> find pipeline
+# -> find workflow -> wait for tests -> approve the gate -> monitor the deploy.
+set -euo pipefail
+
+POLL_INTERVAL=20
+MAX_POLLS=40           # ~13 min ceiling for tests + approval
+MAX_DEPLOY_POLLS=60    # ~20 min ceiling for the deploy job itself
+
+# ─── arg parsing ────────────────────────────────────────────────────────────
+ENV_NAME=""
+TARGET_SHA_ARG=""
+WORKFLOW_NAME=""
+DEPLOY_OVERRIDE=""
+APPROVAL_OVERRIDE=""
+TEST_OVERRIDE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sha)          TARGET_SHA_ARG="${2:-}"; shift 2 ;;
+    --workflow)     WORKFLOW_NAME="${2:-}"; shift 2 ;;
+    --deploy-job)   DEPLOY_OVERRIDE="${2:-}"; shift 2 ;;
+    --approval-job) APPROVAL_OVERRIDE="${2:-}"; shift 2 ;;
+    --test-job)     TEST_OVERRIDE="${2:-}"; shift 2 ;;
+    --no-autofix)   shift ;;
+    -h|--help)      sed -n '2,30p' "$0"; exit 0 ;;
+    -*)             echo "error: unknown flag: $1" >&2; exit 1 ;;
+    *)              if [[ -z "$ENV_NAME" ]]; then ENV_NAME="$1"; else echo "error: unexpected arg: $1" >&2; exit 1; fi; shift ;;
+  esac
+done
+
+# ─── token ──────────────────────────────────────────────────────────────────
+if [[ -n "${CIRCLECI_TOKEN:-}" ]]; then
+  CC_TOKEN="$CIRCLECI_TOKEN"
+elif [[ -f "$HOME/.circleci/cli.yml" ]]; then
+  CC_TOKEN=$(awk '/^token:/ {print $2}' "$HOME/.circleci/cli.yml" || true)
+fi
+if [[ -z "${CC_TOKEN:-}" ]]; then
+  echo "error: no CircleCI token found. Set CIRCLECI_TOKEN or run 'circleci setup'." >&2
+  exit 2
+fi
+
+cc_get()  { curl -sS --fail-with-body -H "Circle-Token: $CC_TOKEN" "$@"; }
+cc_post() { curl -sS --fail-with-body -X POST -H "Circle-Token: $CC_TOKEN" "$@"; }
+
+# ─── project slug from git remote ─────────────────────────────────────────────
+REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+if [[ -z "$REMOTE_URL" ]]; then
+  echo "error: no 'origin' remote found — run this from inside the project's git repo." >&2
+  exit 1
+fi
+read -r VCS_PREFIX V1_PREFIX OWNER_REPO <<<"$(REMOTE_URL="$REMOTE_URL" python3 -c "
+import os, re, sys
+url = os.environ['REMOTE_URL'].strip()
+m = re.search(r'(?:@|//)([^/:]+)[/:]([^/]+/[^/]+?)(?:\.git)?/?\$', url)
+if not m:
+    sys.exit(0)
+host, owner_repo = m.group(1), m.group(2)
+if 'bitbucket' in host:
+    print('bb', 'bitbucket', owner_repo)
+else:
+    print('gh', 'github', owner_repo)
+")"
+if [[ -z "${OWNER_REPO:-}" ]]; then
+  echo "error: could not parse a GitHub/Bitbucket project from origin remote ('$REMOTE_URL')." >&2
+  exit 1
+fi
+PROJECT_SLUG="$VCS_PREFIX/$OWNER_REPO"
+echo "Project: $PROJECT_SLUG"
+
+# ─── branch + target SHA ──────────────────────────────────────────────────────
+BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
+if [[ -n "$TARGET_SHA_ARG" ]]; then
+  TARGET_SHA="$TARGET_SHA_ARG"
+else
+  git fetch origin "$BRANCH" --quiet 2>/dev/null || true
+  TARGET_SHA=$(git rev-parse "origin/$BRANCH" 2>/dev/null || git rev-parse HEAD)
+fi
+SHORT_SHA="${TARGET_SHA:0:7}"
+echo "Branch: $BRANCH    Target commit: $SHORT_SHA"
+
+# ─── find pipeline for SHA ────────────────────────────────────────────────────
+PIPELINE_ID=$(cc_get "https://circleci.com/api/v2/project/$PROJECT_SLUG/pipeline?branch=$BRANCH" \
+  | TARGET_SHA="$TARGET_SHA" python3 -c "
+import json, os, sys
+target = os.environ['TARGET_SHA']
+data = json.load(sys.stdin)
+for p in data.get('items', []):
+    if p.get('vcs', {}).get('revision', '') == target:
+        print(p['id']); sys.exit(0)
+")
+if [[ -z "$PIPELINE_ID" ]]; then
+  echo "error: no CircleCI pipeline found for $SHORT_SHA on '$BRANCH'." >&2
+  echo "Hint: CI may not have picked up the commit yet. Try again in a minute, or check" >&2
+  echo "  https://app.circleci.com/pipelines/$PROJECT_SLUG?branch=$BRANCH" >&2
+  exit 3
+fi
+echo "Pipeline: $PIPELINE_ID"
+
+# ─── choose the workflow (the one that contains a deploy job) ─────────────────
+# A pipeline usually has one workflow. When there are several, we pick the one
+# that contains a deploy-shaped job. If more than one qualifies, we bail to the
+# caller (exit 9) so they can pin it with --workflow.
+HAS_DEPLOY_PY='import json, re, sys
+kw = re.compile(r"(?:^|[-_])(?:deploy|release|ship|publish)(?:$|[-_])", re.I)
+d = json.load(sys.stdin)
+sys.exit(0 if any(kw.search(j.get("name","")) for j in d.get("items", [])) else 1)'
+
+CANDIDATE_IDS=()
+while read -r WID; do
+  [[ -z "$WID" ]] && continue
+  WJOBS=$(cc_get "https://circleci.com/api/v2/workflow/$WID/job")
+  if printf '%s' "$WJOBS" | python3 -c "$HAS_DEPLOY_PY"; then
+    CANDIDATE_IDS+=("$WID")
+  fi
+done < <(cc_get "https://circleci.com/api/v2/pipeline/$PIPELINE_ID/workflow" \
+  | WF_NAME="$WORKFLOW_NAME" python3 -c "
+import json, os, sys
+want = os.environ.get('WF_NAME', '')
+data = json.load(sys.stdin)
+items = sorted(data.get('items', []), key=lambda w: w.get('created_at', ''), reverse=True)
+for w in items:
+    if want and w.get('name') != want:
+        continue
+    print(w['id'])
+")
+
+if [[ ${#CANDIDATE_IDS[@]} -eq 0 ]]; then
+  echo "error: no workflow with a deploy job found in pipeline $PIPELINE_ID." >&2
+  [[ -n "$WORKFLOW_NAME" ]] && echo "  (filtered to --workflow '$WORKFLOW_NAME')" >&2
+  exit 4
+fi
+if [[ ${#CANDIDATE_IDS[@]} -gt 1 ]]; then
+  echo "error: multiple workflows contain deploy jobs — re-run with --workflow <name>." >&2
+  exit 9
+fi
+WORKFLOW_ID="${CANDIDATE_IDS[0]}"
+echo "Workflow: $WORKFLOW_ID"
+
+WF_JOBS_JSON=$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job")
+
+# ─── resolve env + jobs by naming convention ──────────────────────────────────
+# detect.py exits 9 (ambiguous job match) or 10 (multiple envs, none chosen) for
+# the caller to resolve. On success it prints: <env>\t<deploy_job>\t<approval_job>
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+set +e
+DETECT_OUT=$(printf '%s' "$WF_JOBS_JSON" | \
+  ENV_NAME="$ENV_NAME" DEPLOY_OVERRIDE="$DEPLOY_OVERRIDE" APPROVAL_OVERRIDE="$APPROVAL_OVERRIDE" \
+  python3 "$SCRIPT_DIR/detect.py")
+DETECT_RC=$?
+set -e
+
+case "$DETECT_RC" in
+  0) : ;;
+  9)  echo "$DETECT_OUT" >&2; exit 9 ;;
+  10) echo "$DETECT_OUT" >&2; exit 10 ;;
+  *)  echo "$DETECT_OUT" >&2; exit "${DETECT_RC:-4}" ;;
+esac
+
+IFS=$'\t' read -r ENV_NAME DEPLOY_JOB APPROVAL_JOB <<<"$DETECT_OUT"
+echo "Env: $ENV_NAME    deploy job: $DEPLOY_JOB    approval gate: ${APPROVAL_JOB:-(none)}"
+
+# ─── per-poll status extractor ────────────────────────────────────────────────
+# Prints: <test_fail_status_or_dash>\t<hold_status>\t<hold_approval_id>\t<deploy_status>
+poll_status() {
+  DEPLOY_JOB="$DEPLOY_JOB" APPROVAL_JOB="$APPROVAL_JOB" TEST_JOB="$TEST_OVERRIDE" python3 -c "
+import json, os, sys
+data = json.load(sys.stdin)
+deploy = os.environ['DEPLOY_JOB']
+appr = os.environ.get('APPROVAL_JOB', '')
+testjob = os.environ.get('TEST_JOB', '')
+FAIL = {'failed', 'canceled', 'unauthorized'}
+hold, hold_id, dep, test_fail = '-', '-', '-', '-'
+for j in data.get('items', []):
+    n, s, t = j.get('name'), j.get('status') or '-', j.get('type')
+    if n == deploy:
+        dep = s
+    elif appr and n == appr:
+        hold = s
+        hold_id = j.get('approval_request_id') or j.get('id') or '-'
+for j in data.get('items', []):
+    n, s, t = j.get('name'), j.get('status'), j.get('type')
+    if n == deploy or t == 'approval':
+        continue
+    if testjob and n != testjob:
+        continue
+    if s in FAIL:
+        test_fail = s
+        break
+print('%s\t%s\t%s\t%s' % (test_fail, hold, hold_id, dep))
+"
+}
+
+# Poll the deploy job until terminal. 0 success, 6 failure, 8 timeout.
+monitor_deploy() {
+  echo "Monitoring $DEPLOY_JOB..."
+  local j status
+  for ((j=1; j<=MAX_DEPLOY_POLLS; j++)); do
+    status=$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job" \
+      | DEPLOY_JOB="$DEPLOY_JOB" python3 -c "
+import json, os, sys
+data = json.load(sys.stdin)
+for jb in data.get('items', []):
+    if jb.get('name') == os.environ['DEPLOY_JOB']:
+        print(jb.get('status') or '-'); break
+else:
+    print('-')
+")
+    echo "[deploy poll $j] $DEPLOY_JOB=$status"
+    case "$status" in
+      success)
+        echo "$DEPLOY_JOB succeeded for $SHORT_SHA ($ENV_NAME)."
+        echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID"
+        return 0 ;;
+      failed|canceled|unauthorized|infrastructure_fail|timedout|terminated_unknown|errored|not_run)
+        echo "error: $DEPLOY_JOB ended with status '$status'." >&2
+        echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
+        return 6 ;;
+    esac
+    if (( j < MAX_DEPLOY_POLLS )); then sleep "$POLL_INTERVAL"; fi
+  done
+  echo "error: $DEPLOY_JOB did not finish within ~20 min — check the pipeline manually." >&2
+  echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
+  return 8
+}
+
+# ─── poll loop: wait for tests, react to the gate ─────────────────────────────
+APPROVAL_REQUEST_ID=""
+for ((i=1; i<=MAX_POLLS; i++)); do
+  read -r TEST_FAIL HOLD_STATUS HOLD_APPROVAL_ID DEPLOY_STATUS \
+    <<<"$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job" | poll_status)"
+
+  echo "[poll $i] tests=${TEST_FAIL} $APPROVAL_JOB=$HOLD_STATUS $DEPLOY_JOB=$DEPLOY_STATUS"
+
+  # Fail fast if any test/build job failed.
+  if [[ "$TEST_FAIL" != "-" ]]; then
+    echo "error: a build/test job ended with status '$TEST_FAIL' — not approving deploy." >&2
+    echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
+    exit 5
+  fi
+
+  # Already past the gate (re-run safe).
+  case "$DEPLOY_STATUS" in
+    success)
+      echo "$DEPLOY_JOB was already success — nothing to do."
+      exit 0 ;;
+    failed|canceled|unauthorized|infrastructure_fail|timedout|errored)
+      echo "error: $DEPLOY_JOB is already in terminal failure state '$DEPLOY_STATUS'." >&2
+      echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
+      exit 6 ;;
+    running|queued)
+      echo "$DEPLOY_JOB is already $DEPLOY_STATUS — skipping approval and monitoring."
+      monitor_deploy; exit $? ;;
+  esac
+  case "$HOLD_STATUS" in
+    success)
+      echo "$APPROVAL_JOB was already approved — monitoring deploy."
+      monitor_deploy; exit $? ;;
+    on_hold)
+      APPROVAL_REQUEST_ID="$HOLD_APPROVAL_ID"
+      break ;;
+  esac
+
+  if (( i < MAX_POLLS )); then sleep "$POLL_INTERVAL"; fi
+done
+
+if [[ -z "$APPROVAL_REQUEST_ID" || "$APPROVAL_REQUEST_ID" == "-" ]]; then
+  echo "error: ${APPROVAL_JOB:-approval gate} never reached on_hold within ~13 min. Check the workflow manually." >&2
+  echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
+  exit 7
+fi
+
+# ─── approve ──────────────────────────────────────────────────────────────────
+echo "Approving $APPROVAL_JOB ($APPROVAL_REQUEST_ID)..."
+cc_post "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/approve/$APPROVAL_REQUEST_ID" > /dev/null
+echo "Approved. Watch deploy at: https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID"
+
+monitor_deploy

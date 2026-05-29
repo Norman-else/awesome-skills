@@ -8,6 +8,7 @@ copies under `~/.codex/skills` and `~/.claude/skills`.
 
 ## Included skills
 
+- `ci-deploy`
 - `clean-my-mac`
 - `remote-github-pr`
 - `vault-share`

@@ -1,0 +1,7 @@
+interface:
+  display_name: "CI Deploy"
+  short_description: "Approve a CircleCI gate and watch the deploy."
+  default_prompt: "Deploy the current project to dev using $ci-deploy. If multiple deploy environments exist and none was named, ask which one before approving."
+
+dependencies:
+  tools: []

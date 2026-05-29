@@ -1,0 +1,196 @@
+---
+name: ci-deploy
+description: Use whenever the user asks to deploy the current project to an environment through a CircleCI manual-approval gate — phrases like "deploy to dev", "ship to staging", "release to prod", "部署 dev", "上 sat", "发 prod", or just "deploy this". Auto-detects the CircleCI project, workflow, and the approval/deploy/test jobs from the current git repo (no per-repo config). Approves the gate for the chosen environment, waits for tests if needed, then watches the deploy job until it succeeds or fails. Do NOT use for local docker runs or any deploy that doesn't go through a CircleCI approval gate.
+---
+
+# Deploy to an environment via CircleCI
+
+This skill approves a CircleCI manual-approval gate for a chosen environment and
+watches the resulting deploy job. It is project-agnostic: it discovers the
+CircleCI project, workflow, and job names automatically, so the same skill works
+across every repo whose pipeline gates deploys behind a manual approval.
+
+## When this triggers
+
+Direct requests to deploy the current project to some environment:
+- "deploy to dev" / "ship to staging" / "release to prod"
+- "部署 dev" / "上 sat" / "发 prod"
+- "deploy this" / "部署一下" (environment resolved automatically — see below)
+
+When NOT to trigger:
+- Local `docker compose up` or running the app locally.
+- "How do I deploy?" — that's a documentation question; explain the steps instead.
+- Pipelines with no manual approval gate where there's nothing to approve.
+
+## Resolving the target environment
+
+- **User named an environment** ("deploy dev", "ship to sat") → that environment.
+- **User did not name one** ("deploy this") → the script inspects the workflow's
+  deploy jobs:
+  - exactly one deploy environment → it's used automatically, no prompt.
+  - **multiple environments** (e.g. `deploy_dev` + `deploy_sat`) → the script
+    exits **10** and prints `DEPLOY_ENVS=dev,sat`. Ask the user which one with
+    AskUserQuestion, then re-run with the chosen environment.
+
+## How to run it
+
+Invoke the bundled script. It is idempotent and safe to re-run.
+
+```bash
+.claude/skills/ci-deploy/scripts/deploy.sh <env>
+```
+
+`<env>` is optional (see resolution above). Useful options:
+
+```bash
+deploy.sh <env> --sha <commit>          # target a specific commit instead of the branch tip
+deploy.sh <env> --workflow <name>       # pin the workflow when a pipeline has several
+deploy.sh <env> --deploy-job <name>     # explicit deploy job (resolves exit-9 ambiguity)
+deploy.sh <env> --approval-job <name>   # explicit approval gate
+deploy.sh <env> --test-job <name>       # restrict the "build failed" check to one job
+```
+
+The path above assumes the skill is installed into a project's `.claude/skills/`.
+When run from the plugin cache, use the script's own absolute path — the script
+resolves its sibling `detect.py` relative to itself either way.
+
+### What it auto-detects
+
+- **Project slug** from `git remote get-url origin` (GitHub → `gh/`, Bitbucket → `bb/`).
+- **Target commit**: the current branch's remote tip by default (`--sha` overrides).
+- **Pipeline**: the CircleCI pipeline whose revision matches the target commit on
+  the current branch.
+- **Workflow**: the workflow in that pipeline containing a deploy job (`--workflow` to pin).
+- **Deploy / approval / test jobs**: by naming convention — a deploy job is
+  `deploy_<env>` / `deploy-<env>` / `release-<env>` etc.; the approval gate is the
+  approval-type job matching the environment; everything else is a build/test job.
+
+### Run it in the background
+
+The script runs in two phases: it waits for the build/test jobs (~2–4 min typical,
+up to ~13 min ceiling), approves the gate, then watches the deploy job until it
+finishes (~3–8 min typical, up to ~20 min ceiling). End-to-end is usually under 15
+minutes. Always run it in the background — you'll be notified when it completes,
+then you can report success or surface the failure.
+
+When telling the user what you're doing, name the environment and the commit
+(short SHA). The script prints the workflow URL once it locks onto a pipeline;
+include that link so the user can watch in parallel. When the script exits, its
+final lines say whether the deploy succeeded or how it failed — relay that.
+
+## When the build fails: auto-fix loop
+
+Exit code 5 means a build/test job failed. Treat this as part of the normal deploy
+flow, not a stopping point — the user invoked this skill to get a deploy *out*, not
+just to learn the build broke. Run the loop below until the deploy succeeds, or
+until one of the explicit stop conditions hits.
+
+The loop is your responsibility, not the script's. The script does deploy
+mechanics; you do diagnosis, fix, and retry. Re-running `deploy.sh` after each fix
+automatically picks up the new tip of the current branch.
+
+### One iteration
+
+1. **Grab the workflow ID.** The script's background-output file contains a line
+   like `Workflow: a50e082f-…`. Read the file (the path is in the task
+   notification you got) and extract that UUID. It's how you fetch logs.
+
+2. **Fetch the failed step output.** Run:
+   ```bash
+   .claude/skills/ci-deploy/scripts/fetch_failed_logs.sh <workflow-id>
+   ```
+   With no job name it inspects every failed job and tails each failed step to
+   ~300 lines, so you read the actual diagnostic, not 50k lines of resolver
+   chatter. Override with `TAIL_LINES=N`, or pass a job name as the 2nd arg.
+
+3. **Diagnose the root cause.** Common shapes:
+   - **Test assertion / `StopIteration` / `AttributeError`** — actual code or test
+     bug. `StopIteration` from a `MagicMock` almost always means a mock's
+     `side_effect` list is too short because a new code path was added without
+     updating the mock.
+   - **Import / `ModuleNotFoundError`** — broken module path or missing dep. Check
+     the project's dependency manifest and the import statement.
+   - **Type / lint** — file + line is right there in the message. Fix it.
+   - **Infrastructure flake** (network timeout, container 137, "checkout failed") —
+     *not* something you patch in code. See stop conditions.
+
+4. **Apply the smallest fix.** Don't add features, don't refactor, don't widen the
+   change beyond what the failure needs. Don't bypass tests with `--no-verify`,
+   `xfail`, `pytest.skip`, or `# type: ignore` unless the user explicitly asked.
+
+5. **Commit and push.** One focused commit, message like `Fix <thing> caught by
+   CI`. Push to the **current branch** (the branch the deploy targets).
+
+6. **Re-run the deploy script in the background.** It auto-targets the current
+   branch's new tip, so your fix gets picked up. Wait for the task notification.
+
+7. **On exit 0** → deploy succeeded, report success.
+   **On exit 5 again** → loop back to step 1, reading the *new* logs, not your
+   memory of the old failure.
+   **On exit 6, 7, 8** → see "Other exit codes" below.
+
+Give the user one tight update per iteration: which commit you pushed, what you
+fixed, the new workflow URL. Don't narrate every poll.
+
+### Stop conditions (do NOT keep looping)
+
+Pause and ask the user the moment any of these hit:
+
+- **Iteration count ≥ 5.** Hard ceiling. If five fixes haven't gotten a green
+  build, something deeper is wrong.
+- **Same root cause two iterations in a row.** Your fix isn't working.
+- **Infrastructure-level failure** with no per-step output, or `fetch_failed_logs.sh`
+  reports no failed steps. Likely a CI runner issue, not code.
+- **Failure requires a decision you can't make** (e.g. an API contract changed and
+  the test asserts the old shape — which side is correct is a product call).
+- **Failure looks flaky** (network blip, timing-sensitive test). Don't "fix"
+  something that wasn't broken; offer to retry without a code change.
+- **The build/test jobs never ran** (exit 3 or 4): the pipeline didn't ingest the
+  commit or the workflow filter rejected the branch. Don't loop — investigate.
+
+## Detection ambiguity (exit 9 / 10)
+
+- **Exit 10** — environment omitted and multiple deploy environments exist. The
+  script prints `DEPLOY_ENVS=...`. Ask the user which environment with
+  AskUserQuestion, then re-run with that environment as the first argument.
+- **Exit 9** — multiple jobs match (e.g. `deploy_dev` and `deploy_dev_canary`, or
+  several workflows have deploy jobs). The script prints the candidates. Pick the
+  right one and re-run with `--deploy-job` / `--approval-job` / `--workflow`. If
+  it's genuinely unclear which is correct, ask the user.
+
+## Other exit codes
+
+- **Exit 6** (deploy job failed) — the build was fine but the deploy broke. Fetch
+  the deploy-job logs with the job name:
+  ```bash
+  .claude/skills/ci-deploy/scripts/fetch_failed_logs.sh <workflow-id> <deploy-job-name>
+  ```
+  Don't auto-retry — deploy failures often indicate environment drift (missing
+  secret, image push failure, infra service down) and need eyes on them.
+- **Exit 7 / 8** — timeouts. Don't blindly retry; surface to the user.
+
+## Exit code reference
+
+| Code | Meaning | What to tell the user |
+|------|---------|------------------------|
+| 0 | deploy succeeded (or already success on a re-run) | Confirm deploy is live, link the workflow |
+| 1 | usage / can't determine repo or slug | Run from inside the project git repo |
+| 2 | missing CircleCI token | Run `circleci setup` or set `CIRCLECI_TOKEN` |
+| 3 | no pipeline found for the SHA yet | CI hasn't ingested the commit; retry in a minute |
+| 4 | no deploy job / workflow found | Branch may be filtered out, or no deploy job for the env |
+| 5 | a build/test job failed | Enter the auto-fix loop above |
+| 6 | deploy job failed | Fetch deploy-job logs; do not auto-retry |
+| 7 | gate never reached on_hold within ~13 min | Check the pipeline manually |
+| 8 | deploy job didn't finish within ~20 min | Check the workflow; job may be stuck |
+| 9 | ambiguous detection | Re-run with explicit `--deploy-job`/`--approval-job`/`--workflow` |
+| 10 | multiple deploy environments, none chosen | Ask the user which env, re-run with it |
+
+## Requirements
+
+- A CircleCI token with read+approve access to the project. The script reads
+  `$CIRCLECI_TOKEN` first, then falls back to `~/.circleci/cli.yml`.
+- `git`, `curl`, and `python3` on PATH.
+- Run from inside the project's git repository (the script needs `origin` and the
+  current branch).
+- A CircleCI workflow that deploys behind a manual-approval gate, with deploy jobs
+  named with the environment embedded (`deploy_<env>`, `deploy-<env>`, …).
