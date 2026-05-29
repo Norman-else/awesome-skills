@@ -2,8 +2,8 @@
 # ci-deploy — approve a CircleCI manual-approval gate and watch the deploy job.
 #
 # Project-agnostic: detects the CircleCI project, workflow, and the
-# approval/deploy/test jobs automatically from the current git repo and the
-# CircleCI API. No per-repo config file required.
+# approval/deploy/test jobs from the current git repo (local mode) or from
+# explicit flags (remote mode), plus the CircleCI API. No per-repo config file.
 #
 # Usage:
 #   deploy.sh [<env>] [options]
@@ -15,8 +15,14 @@
 #                          can ask the user which one.
 #
 # Options:
-#   --sha <sha>            Deploy a specific commit (default: current branch's
-#                          remote tip).
+#   --repo <owner/repo>    Remote mode — deploy a repo you have NOT cloned.
+#                          Skips git; slug becomes gh/owner/repo (or pass a full
+#                          vcs/owner/repo). Branch defaults to master; pair with
+#                          --sha to target a specific commit.
+#   --branch <name>        Override the branch (local default: current HEAD;
+#                          remote default: master).
+#   --sha <sha>            Deploy a specific commit (local default: branch's
+#                          remote tip; remote default: latest pipeline on branch).
 #   --workflow <name>      Pin the workflow when a pipeline has several.
 #   --deploy-job <name>    Explicit deploy job (used when detection is ambiguous).
 #   --approval-job <name>  Explicit approval gate job.
@@ -39,16 +45,20 @@ WORKFLOW_NAME=""
 DEPLOY_OVERRIDE=""
 APPROVAL_OVERRIDE=""
 TEST_OVERRIDE=""
+REPO_ARG=""
+BRANCH_ARG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --repo)         REPO_ARG="${2:-}"; shift 2 ;;
+    --branch)       BRANCH_ARG="${2:-}"; shift 2 ;;
     --sha)          TARGET_SHA_ARG="${2:-}"; shift 2 ;;
     --workflow)     WORKFLOW_NAME="${2:-}"; shift 2 ;;
     --deploy-job)   DEPLOY_OVERRIDE="${2:-}"; shift 2 ;;
     --approval-job) APPROVAL_OVERRIDE="${2:-}"; shift 2 ;;
     --test-job)     TEST_OVERRIDE="${2:-}"; shift 2 ;;
     --no-autofix)   shift ;;
-    -h|--help)      sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help)      sed -n '2,40p' "$0"; exit 0 ;;
     -*)             echo "error: unknown flag: $1" >&2; exit 1 ;;
     *)              if [[ -z "$ENV_NAME" ]]; then ENV_NAME="$1"; else echo "error: unexpected arg: $1" >&2; exit 1; fi; shift ;;
   esac
@@ -68,13 +78,22 @@ fi
 cc_get()  { curl -sS --fail-with-body -H "Circle-Token: $CC_TOKEN" "$@"; }
 cc_post() { curl -sS --fail-with-body -X POST -H "Circle-Token: $CC_TOKEN" "$@"; }
 
-# ─── project slug from git remote ─────────────────────────────────────────────
-REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
-if [[ -z "$REMOTE_URL" ]]; then
-  echo "error: no 'origin' remote found — run this from inside the project's git repo." >&2
-  exit 1
-fi
-read -r VCS_PREFIX V1_PREFIX OWNER_REPO <<<"$(REMOTE_URL="$REMOTE_URL" python3 -c "
+# ─── project slug ─────────────────────────────────────────────────────────────
+# Remote mode (--repo): derive the slug from the flag, no git needed.
+# Local mode: parse it from the origin remote, as before.
+if [[ -n "$REPO_ARG" ]]; then
+  case "$REPO_ARG" in
+    */*/*) PROJECT_SLUG="$REPO_ARG" ;;        # already vcs/owner/repo
+    */*)   PROJECT_SLUG="gh/$REPO_ARG" ;;      # owner/repo → assume GitHub
+    *)     echo "error: --repo must be owner/repo or vcs/owner/repo (got '$REPO_ARG')." >&2; exit 1 ;;
+  esac
+else
+  REMOTE_URL=$(git remote get-url origin 2>/dev/null || true)
+  if [[ -z "$REMOTE_URL" ]]; then
+    echo "error: no 'origin' remote found — run from inside the repo, or pass --repo owner/repo." >&2
+    exit 1
+  fi
+  read -r VCS_PREFIX V1_PREFIX OWNER_REPO <<<"$(REMOTE_URL="$REMOTE_URL" python3 -c "
 import os, re, sys
 url = os.environ['REMOTE_URL'].strip()
 m = re.search(r'(?:@|//)([^/:]+)[/:]([^/]+/[^/]+?)(?:\.git)?/?\$', url)
@@ -86,22 +105,41 @@ if 'bitbucket' in host:
 else:
     print('gh', 'github', owner_repo)
 ")"
-if [[ -z "${OWNER_REPO:-}" ]]; then
-  echo "error: could not parse a GitHub/Bitbucket project from origin remote ('$REMOTE_URL')." >&2
-  exit 1
+  if [[ -z "${OWNER_REPO:-}" ]]; then
+    echo "error: could not parse a GitHub/Bitbucket project from origin remote ('$REMOTE_URL')." >&2
+    exit 1
+  fi
+  PROJECT_SLUG="$VCS_PREFIX/$OWNER_REPO"
 fi
-PROJECT_SLUG="$VCS_PREFIX/$OWNER_REPO"
 echo "Project: $PROJECT_SLUG"
 
 # ─── branch + target SHA ──────────────────────────────────────────────────────
-BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
+# Branch: explicit flag wins; remote mode defaults to master; local mode reads HEAD.
+if [[ -n "$BRANCH_ARG" ]]; then
+  BRANCH="$BRANCH_ARG"
+elif [[ -n "$REPO_ARG" ]]; then
+  BRANCH="master"
+else
+  BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
+fi
+
+# Target SHA: explicit flag wins. In remote mode without --sha we leave it empty
+# and let the pipeline lookup take the latest pipeline on the branch. In local
+# mode without --sha we resolve the branch's remote tip via git.
 if [[ -n "$TARGET_SHA_ARG" ]]; then
   TARGET_SHA="$TARGET_SHA_ARG"
+elif [[ -n "$REPO_ARG" ]]; then
+  TARGET_SHA=""
 else
   git fetch origin "$BRANCH" --quiet 2>/dev/null || true
   TARGET_SHA=$(git rev-parse "origin/$BRANCH" 2>/dev/null || git rev-parse HEAD)
 fi
-SHORT_SHA="${TARGET_SHA:0:7}"
+
+if [[ -n "$TARGET_SHA" ]]; then
+  SHORT_SHA="${TARGET_SHA:0:7}"
+else
+  SHORT_SHA="latest on $BRANCH"
+fi
 echo "Branch: $BRANCH    Target commit: $SHORT_SHA"
 
 # ─── find pipeline for SHA ────────────────────────────────────────────────────
@@ -110,7 +148,14 @@ PIPELINE_ID=$(cc_get "https://circleci.com/api/v2/project/$PROJECT_SLUG/pipeline
 import json, os, sys
 target = os.environ['TARGET_SHA']
 data = json.load(sys.stdin)
-for p in data.get('items', []):
+items = data.get('items', [])
+# No target SHA (remote mode without --sha): take the latest pipeline on the
+# branch — CircleCI returns items newest-first.
+if not target:
+    if items:
+        print(items[0]['id'])
+    sys.exit(0)
+for p in items:
     if p.get('vcs', {}).get('revision', '') == target:
         print(p['id']); sys.exit(0)
 ")

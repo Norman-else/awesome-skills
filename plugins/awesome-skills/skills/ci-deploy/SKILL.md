@@ -1,6 +1,6 @@
 ---
 name: ci-deploy
-description: Use whenever the user asks to deploy the current project to an environment through a CircleCI manual-approval gate — phrases like "deploy to dev", "ship to staging", "release to prod", or just "deploy this". Auto-detects the CircleCI project, workflow, and the approval/deploy/test jobs from the current git repo (no per-repo config). Approves the gate for the chosen environment, waits for tests if needed, then watches the deploy job until it succeeds or fails. Do NOT use for local docker runs or any deploy that doesn't go through a CircleCI approval gate.
+description: Use whenever the user asks to deploy a project to an environment through a CircleCI manual-approval gate — phrases like "deploy to dev", "ship to staging", "release to prod", "deploy this", or naming a repo you haven't cloned ("deploy backend delivery to sat"). Auto-detects the CircleCI project, workflow, and approval/deploy/test jobs from the current git repo (no per-repo config); also supports a remote mode that deploys a repo you have not cloned by resolving it from a natural-language name via `gh`. Approves the gate for the chosen environment, waits for tests if needed, then watches the deploy job until it succeeds or fails. Do NOT use for local docker runs or any deploy that doesn't go through a CircleCI approval gate.
 ---
 
 # Deploy to an environment via CircleCI
@@ -27,9 +27,11 @@ A prompt/argument is optional — it only narrows the target when given (e.g.
 
 ## When this triggers
 
-Direct requests to deploy the current project to some environment:
+Direct requests to deploy a project to some environment:
 - "deploy to dev" / "ship to staging" / "release to prod"
 - "deploy this" (environment resolved automatically — see below)
+- naming a repo you haven't cloned — "deploy backend delivery to sat" (remote
+  mode — see "Deploying a repo you haven't cloned" below)
 
 When NOT to trigger:
 - Local `docker compose up` or running the app locally.
@@ -57,6 +59,8 @@ Invoke the bundled script. It is idempotent and safe to re-run.
 `<env>` is optional (see resolution above). Useful options:
 
 ```bash
+deploy.sh <env> --repo <owner/repo>     # remote mode: deploy a repo you haven't cloned
+deploy.sh <env> --branch <name>         # override the branch (remote mode defaults to master)
 deploy.sh <env> --sha <commit>          # target a specific commit instead of the branch tip
 deploy.sh <env> --workflow <name>       # pin the workflow when a pipeline has several
 deploy.sh <env> --deploy-job <name>     # explicit deploy job (resolves exit-9 ambiguity)
@@ -67,6 +71,48 @@ deploy.sh <env> --test-job <name>       # restrict the "build failed" check to o
 The path above assumes the skill is installed into a project's `.claude/skills/`.
 When run from the plugin cache, use the script's own absolute path — the script
 resolves its sibling `detect.py` relative to itself either way.
+
+## Deploying a repo you haven't cloned (remote mode)
+
+When the user names a repo they have **not** cloned — e.g. "deploy backend
+delivery to sat" — resolve the repo and the target commit with `gh`, then hand
+an explicit slug + commit to the script. This requires an authenticated `gh`
+CLI. The default GitHub org is **`Mercaso`**.
+
+1. **Resolve the repo from the description.** Search the org:
+   ```bash
+   gh search repos --owner Mercaso "<description>" --limit 10 --json fullName,description
+   ```
+   - **Exactly one strong match** → use it; tell the user which repo you picked
+     when you start the deploy.
+   - **Several plausible matches** → ask the user which one with AskUserQuestion.
+   - **No match** → tell the user, ask them to refine the description.
+   - If the user already gave an explicit `owner/repo`, skip the search. The org
+     defaults to `Mercaso` only when the user gives a bare name; an explicit
+     owner always wins.
+
+2. **Resolve the target commit — the user's latest commit on `master`.** Filter
+   by GitHub **author** (committer changes under rebase/squash):
+   ```bash
+   login=$(gh api user --jq .login)
+   gh api "repos/<owner>/<repo>/commits?sha=master&author=$login&per_page=1" --jq '.[0].sha'
+   ```
+   - Got a SHA → deploy that commit.
+   - **Empty** (the user has no commit on `master`) → tell the user; offer to
+     deploy the plain `master` tip instead (drop `--sha`), or stop.
+
+3. **Deploy.** Run in the background, same as local mode:
+   ```bash
+   deploy.sh <env> --repo Mercaso/<repo> --branch master --sha <sha>
+   ```
+   Environment disambiguation (exit 10) and every other exit code behave exactly
+   as in local mode.
+
+**No clone means no auto-fix loop.** The exit-5 auto-fix loop below commits and
+pushes fixes, which needs a local working copy. In remote mode there is none, so
+on **exit 5** fetch the failed logs (`fetch_failed_logs.sh`) and report the
+failure — do **not** enter the commit/push loop. If the user wants the build
+fixed, tell them a local clone is required first.
 
 ### What it auto-detects
 
@@ -98,6 +144,11 @@ Exit code 5 means a build/test job failed. Treat this as part of the normal depl
 flow, not a stopping point — the user invoked this skill to get a deploy *out*, not
 just to learn the build broke. Run the loop below until the deploy succeeds, or
 until one of the explicit stop conditions hits.
+
+**Remote mode (`--repo`, no local clone) skips this loop entirely** — there is no
+working copy to edit, commit, or push. On exit 5 in remote mode, fetch the failed
+logs and report the failure (see "Deploying a repo you haven't cloned"); offer a
+local clone if the user wants it fixed.
 
 The loop is your responsibility, not the script's. The script does deploy
 mechanics; you do diagnosis, fix, and retry. Re-running `deploy.sh` after each fix
@@ -188,7 +239,7 @@ Pause and ask the user the moment any of these hit:
 | Code | Meaning | What to tell the user |
 |------|---------|------------------------|
 | 0 | deploy succeeded (or already success on a re-run) | Confirm deploy is live, link the workflow |
-| 1 | usage / can't determine repo or slug | Run from inside the project git repo |
+| 1 | usage / can't determine repo or slug | Run from inside the project git repo, or pass `--repo owner/repo` |
 | 2 | missing CircleCI token | Run `circleci setup` or set `CIRCLECI_TOKEN` |
 | 3 | no pipeline found for the SHA yet | CI hasn't ingested the commit; retry in a minute |
 | 4 | no deploy job / workflow found | Branch may be filtered out, or no deploy job for the env |
@@ -204,7 +255,9 @@ Pause and ask the user the moment any of these hit:
 - A CircleCI token with read+approve access to the project. The script reads
   `$CIRCLECI_TOKEN` first, then falls back to `~/.circleci/cli.yml`.
 - `git`, `curl`, and `python3` on PATH.
-- Run from inside the project's git repository (the script needs `origin` and the
-  current branch).
+- **Local mode:** run from inside the project's git repository (the script needs
+  `origin` and the current branch).
+- **Remote mode (`--repo`):** an authenticated `gh` CLI (`gh auth status`). No
+  local clone needed. Default GitHub org is `Mercaso`.
 - A CircleCI workflow that deploys behind a manual-approval gate, with deploy jobs
   named with the environment embedded (`deploy_<env>`, `deploy-<env>`, …).
