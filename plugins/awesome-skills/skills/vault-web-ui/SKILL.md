@@ -9,12 +9,15 @@ description: Open the Vault Web UI in a browser through the Vault MCP integratio
 
 Use this skill to open the Vault Web UI in the user's browser through the Vault MCP integration. Keep the flow minimal and return the opened URL when the tool provides one.
 
+## Invoking with no input IS the request
+
+This skill has exactly one action: open the Vault Web UI. When it is invoked with no extra prompt or arguments, treat the invocation itself as that request — call the tool immediately. Do NOT ask the user for a prompt or for confirmation first; a prompt is optional and its absence is not a reason to stop and ask.
+
 ## Workflow
 
-1. Confirm the user wants to open the Vault Web UI, not read, edit, or share a secret.
-2. Call `mcp__mcp_vault__vault_web_ui_open`.
-3. If the tool succeeds, reply briefly that the Vault Web UI was opened and include the returned URL as a clickable link when available.
-4. If the tool fails, explain the blocker briefly and stop.
+1. Call `mcp__mcp_vault__vault_web_ui_open` straight away (no confirmation prompt). The only reason to pause is if the user's wording clearly asks to read, edit, or share a secret instead — then redirect to the right skill.
+2. If the tool succeeds, reply briefly that the Vault Web UI was opened and include the returned URL as a clickable link when available.
+3. If the tool fails, explain the blocker briefly and stop.
 
 ## Response Rules
 
