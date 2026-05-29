@@ -1,6 +1,6 @@
 ---
 name: ci-deploy
-description: Use whenever the user asks to deploy the current project to an environment through a CircleCI manual-approval gate — phrases like "deploy to dev", "ship to staging", "release to prod", "部署 dev", "上 sat", "发 prod", or just "deploy this". Auto-detects the CircleCI project, workflow, and the approval/deploy/test jobs from the current git repo (no per-repo config). Approves the gate for the chosen environment, waits for tests if needed, then watches the deploy job until it succeeds or fails. Do NOT use for local docker runs or any deploy that doesn't go through a CircleCI approval gate.
+description: Use whenever the user asks to deploy the current project to an environment through a CircleCI manual-approval gate — phrases like "deploy to dev", "ship to staging", "release to prod", or just "deploy this". Auto-detects the CircleCI project, workflow, and the approval/deploy/test jobs from the current git repo (no per-repo config). Approves the gate for the chosen environment, waits for tests if needed, then watches the deploy job until it succeeds or fails. Do NOT use for local docker runs or any deploy that doesn't go through a CircleCI approval gate.
 ---
 
 # Deploy to an environment via CircleCI
@@ -14,8 +14,7 @@ across every repo whose pipeline gates deploys behind a manual approval.
 
 Direct requests to deploy the current project to some environment:
 - "deploy to dev" / "ship to staging" / "release to prod"
-- "部署 dev" / "上 sat" / "发 prod"
-- "deploy this" / "部署一下" (environment resolved automatically — see below)
+- "deploy this" (environment resolved automatically — see below)
 
 When NOT to trigger:
 - Local `docker compose up` or running the app locally.
