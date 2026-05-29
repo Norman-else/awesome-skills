@@ -2,9 +2,20 @@
 """Resolve the target env, deploy job, and approval gate from a CircleCI
 workflow's job list (the JSON body of GET /workflow/{id}/job on stdin).
 
-On success, prints a single tab-separated line to stdout:
+Default mode — prints a single tab-separated line to stdout:
     <env>\t<deploy_job>\t<approval_job>
 (approval_job may be empty if the workflow has no manual gate.)
+
+Cascade mode (env var EMIT_CHAIN=1) — prints the ordered prerequisite chain
+that must be deployed to reach the target, derived from the job dependency
+graph. One line per stage, earliest first, the target stage last:
+    ENV\t<target_env>
+    STAGE\t<env>\t<approval_job>\t<deploy_job>
+    STAGE\t<env>\t<approval_job>\t<deploy_job>
+    ...
+(approval_job is empty for a stage with no manual gate.) A single-environment
+workflow yields exactly one STAGE line, so cascade mode is a strict superset of
+the default single-env behaviour.
 
 Exit codes match the deploy.sh contract:
     0   resolved
@@ -15,7 +26,7 @@ Exit codes match the deploy.sh contract:
         the user which one (env list printed to stderr as DEPLOY_ENVS=a,b,c)
 
 Inputs come from the environment:
-    ENV_NAME, DEPLOY_OVERRIDE, APPROVAL_OVERRIDE
+    ENV_NAME, DEPLOY_OVERRIDE, APPROVAL_OVERRIDE, EMIT_CHAIN
 """
 import json
 import os
@@ -39,16 +50,12 @@ def die(code, *msg):
     sys.exit(code)
 
 
-def main():
-    data = json.load(sys.stdin)
-    jobs = data.get("items", [])
+def resolve_target(jobs, env, deploy_override, approval_override):
+    """Resolve (env, deploy_job, approval_job) for the requested target.
+
+    Exits 4/9/10 on the same conditions as the original single-env resolver."""
     names = [j.get("name", "") for j in jobs]
     approval_names = [j.get("name", "") for j in jobs if j.get("type") == "approval"]
-
-    env = os.environ.get("ENV_NAME", "").strip()
-    deploy_override = os.environ.get("DEPLOY_OVERRIDE", "").strip()
-    approval_override = os.environ.get("APPROVAL_OVERRIDE", "").strip()
-
     deploy_jobs = [n for n in names if KW.search(n)]
 
     # --- deploy job ---
@@ -97,7 +104,84 @@ def main():
         else:
             approval_job = ""
 
-    sys.stdout.write("%s\t%s\t%s\n" % (env, deploy_job, approval_job))
+    return env, deploy_job, approval_job
+
+
+def build_chain(jobs, target_deploy):
+    """Return the ordered list of (env, approval_job, deploy_job) stages that are
+    prerequisites of (and including) target_deploy, derived from the dependency
+    graph. Earliest first, target last.
+
+    A stage is every deploy-shaped build job among target_deploy's transitive
+    ancestors (plus the target itself); its gate is the approval-type job in its
+    direct dependencies (empty if it has none)."""
+    by_id = {j.get("id"): j for j in jobs}
+    by_name = {j.get("name"): j for j in jobs}
+    target = by_name.get(target_deploy)
+    if target is None:
+        # Target not in the live job list yet — fall back to a single stage.
+        return [(env_token(target_deploy), "", target_deploy)]
+
+    # Transitive ancestors of the target (the target itself included).
+    ancestors = set()
+    stack = [target.get("id")]
+    while stack:
+        jid = stack.pop()
+        if jid in ancestors:
+            continue
+        ancestors.add(jid)
+        for dep in (by_id.get(jid, {}).get("dependencies") or []):
+            stack.append(dep)
+
+    # Memoised depth = longest path from a root, for topological ordering.
+    depth_cache = {}
+
+    def depth(jid):
+        if jid in depth_cache:
+            return depth_cache[jid]
+        depth_cache[jid] = 0  # guard against cycles
+        deps = by_id.get(jid, {}).get("dependencies") or []
+        d = 0 if not deps else 1 + max(depth(x) for x in deps)
+        depth_cache[jid] = d
+        return d
+
+    # Deploy-shaped build jobs on the path to the target.
+    stages = []
+    for jid in ancestors:
+        j = by_id.get(jid, {})
+        name = j.get("name", "")
+        if j.get("type") == "approval" or not KW.search(name):
+            continue
+        gate = ""
+        for dep in (j.get("dependencies") or []):
+            dj = by_id.get(dep, {})
+            if dj.get("type") == "approval":
+                gate = dj.get("name", "")
+                break
+        stages.append((depth(jid), env_token(name), gate, name))
+
+    stages.sort(key=lambda s: s[0])
+    return [(env, gate, deploy) for _depth, env, gate, deploy in stages]
+
+
+def main():
+    data = json.load(sys.stdin)
+    jobs = data.get("items", [])
+
+    env = os.environ.get("ENV_NAME", "").strip()
+    deploy_override = os.environ.get("DEPLOY_OVERRIDE", "").strip()
+    approval_override = os.environ.get("APPROVAL_OVERRIDE", "").strip()
+
+    env, deploy_job, approval_job = resolve_target(
+        jobs, env, deploy_override, approval_override)
+
+    if os.environ.get("EMIT_CHAIN", "").strip() in ("1", "true", "yes"):
+        chain = build_chain(jobs, deploy_job)
+        sys.stdout.write("ENV\t%s\n" % env)
+        for stage_env, gate, deploy in chain:
+            sys.stdout.write("STAGE\t%s\t%s\t%s\n" % (stage_env, gate, deploy))
+    else:
+        sys.stdout.write("%s\t%s\t%s\n" % (env, deploy_job, approval_job))
 
 
 if __name__ == "__main__":

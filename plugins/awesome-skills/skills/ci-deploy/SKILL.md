@@ -48,6 +48,30 @@ When NOT to trigger:
     exits **10** and prints `DEPLOY_ENVS=dev,sat`. Ask the user which one with
     AskUserQuestion, then re-run with the chosen environment.
 
+## Cascading through prerequisite environments
+
+Most pipelines gate environments in a chain — `build → hold_dev → deploy_dev →
+hold_sat → deploy_sat → hold_prod → deploy_prod` — where a later environment's
+approval gate only opens once the earlier deploy has succeeded. Asking to deploy
+`prod` on a fresh pipeline therefore can't just approve `hold_prod`; that gate is
+still blocked behind `dev` and `sat`.
+
+The script handles this automatically. It derives the full prerequisite chain to
+the target from the workflow's job dependency graph and walks it in order:
+approve `hold_dev` → watch `deploy_dev` → approve `hold_sat` → watch `deploy_sat`
+→ approve `hold_prod` → watch `deploy_prod`. **This is hands-off — it actually
+deploys every prerequisite environment on the way to the target**, in one
+background run. Stages already deployed (gate approved, deploy succeeded) are
+skipped, so it stays idempotent on re-runs and partial pipelines.
+
+Single-environment pipelines (one deploy job, like a dev-only repo) are just a
+one-stage chain — behaviour is unchanged.
+
+**Announce the plan.** The script prints a `Cascade: dev → sat → prod` line once
+it resolves the chain (it appears early in the background output). When the chain
+has more than one stage, relay it to the user up front so they know prod will be
+preceded by automatic dev + sat deploys.
+
 ## How to run it
 
 Invoke the bundled script. It is idempotent and safe to re-run.
@@ -127,11 +151,14 @@ fixed, tell them a local clone is required first.
 
 ### Run it in the background
 
-The script runs in two phases: it waits for the build/test jobs (~2–4 min typical,
-up to ~13 min ceiling), approves the gate, then watches the deploy job until it
-finishes (~3–8 min typical, up to ~20 min ceiling). End-to-end is usually under 15
-minutes. Always run it in the background — you'll be notified when it completes,
-then you can report success or surface the failure.
+The script runs in two phases per stage: it waits for the build/test jobs (~2–4 min
+typical, up to ~13 min ceiling), approves the gate, then watches the deploy job
+until it finishes (~3–8 min typical, up to ~20 min ceiling). A single-environment
+deploy is usually under 15 minutes. **A cascade multiplies this by the number of
+prerequisite environments** — deploying `prod` through `dev` + `sat` runs three
+deploy stages back-to-back, so budget proportionally longer. Always run it in the
+background — you'll be notified when it completes, then you can report success or
+surface the failure.
 
 When telling the user what you're doing, name the environment and the commit
 (short SHA). The script prints the workflow URL once it locks onto a pipeline;
@@ -225,8 +252,11 @@ Pause and ask the user the moment any of these hit:
 
 ## Other exit codes
 
-- **Exit 6** (deploy job failed) — the build was fine but the deploy broke. Fetch
-  the deploy-job logs with the job name:
+- **Exit 6** (deploy job failed) — the build was fine but a deploy broke. In a
+  cascade the failing stage may be a prerequisite, not the target: the script's
+  stderr names it (`deploy failed at env 'sat' — cascade stopped before prod`),
+  and later stages are left untouched. Fetch the failed deploy-job logs with the
+  job name:
   ```bash
   .claude/skills/ci-deploy/scripts/fetch_failed_logs.sh <workflow-id> <deploy-job-name>
   ```
@@ -238,13 +268,13 @@ Pause and ask the user the moment any of these hit:
 
 | Code | Meaning | What to tell the user |
 |------|---------|------------------------|
-| 0 | deploy succeeded (or already success on a re-run) | Confirm deploy is live, link the workflow |
+| 0 | deploy succeeded — every stage through the target (or already success on a re-run) | Confirm deploy is live, link the workflow |
 | 1 | usage / can't determine repo or slug | Run from inside the project git repo, or pass `--repo owner/repo` |
 | 2 | missing CircleCI token | Run `circleci setup` or set `CIRCLECI_TOKEN` |
 | 3 | no pipeline found for the SHA yet | CI hasn't ingested the commit; retry in a minute |
 | 4 | no deploy job / workflow found | Branch may be filtered out, or no deploy job for the env |
 | 5 | a build/test job failed | Enter the auto-fix loop above |
-| 6 | deploy job failed | Fetch deploy-job logs; do not auto-retry |
+| 6 | a deploy job failed (stderr names which env in a cascade) | Fetch that deploy-job's logs; do not auto-retry |
 | 7 | gate never reached on_hold within ~13 min | Check the pipeline manually |
 | 8 | deploy job didn't finish within ~20 min | Check the workflow; job may be stuck |
 | 9 | ambiguous detection | Re-run with explicit `--deploy-job`/`--approval-job`/`--workflow` |
