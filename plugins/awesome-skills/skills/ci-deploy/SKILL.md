@@ -261,6 +261,14 @@ Pause and ask the user the moment any of these hit:
   several workflows have deploy jobs). The script prints the candidates. Pick the
   right one and re-run with `--deploy-job` / `--approval-job` / `--workflow`. If
   it's genuinely unclear which is correct, ask the user.
+- **Re-runs are handled automatically — they no longer trip exit 9.** When a
+  pipeline holds several workflow *runs of the same name* (CircleCI leaves the
+  superseded runs `canceled` after a "rerun from beginning/failed"), the script
+  drops the canceled runs and keeps the single live run, so the duplicate-name
+  reruns collapse to one candidate. Only genuinely *distinct* workflows (different
+  names) still surface as exit 9 and need `--workflow`. This means a partially
+  approved rerun (e.g. `deploy_dev` already succeeded, `hold_sat`/`hold_prod` still
+  on hold) resumes cleanly on a re-invoke.
 
 ## Other exit codes
 
