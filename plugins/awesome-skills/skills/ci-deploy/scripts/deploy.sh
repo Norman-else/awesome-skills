@@ -189,10 +189,24 @@ done < <(cc_get "https://circleci.com/api/v2/pipeline/$PIPELINE_ID/workflow" \
 import json, os, sys
 want = os.environ.get('WF_NAME', '')
 data = json.load(sys.stdin)
-items = sorted(data.get('items', []), key=lambda w: w.get('created_at', ''), reverse=True)
+items = data.get('items', [])
+if want:
+    items = [w for w in items if w.get('name') == want or w.get('id') == want]
+# A rerun supersedes earlier runs of the same workflow name; CircleCI marks the
+# superseded run 'canceled'. Drop those so a re-run pipeline is not mistaken for
+# several distinct deploy workflows (which would trip the exit-9 ambiguity check).
+items = [w for w in items if w.get('status') != 'canceled']
+# Collapse to one run per workflow name: prefer a still-active run, then the most
+# recently created. Genuinely distinct workflows (different names) stay separate
+# candidates, so real multi-workflow ambiguity still surfaces as exit 9.
+active = {'running', 'on_hold', 'not_run', 'needs_setup'}
+items.sort(key=lambda w: (w.get('status') in active, w.get('created_at', '')), reverse=True)
+seen = set()
 for w in items:
-    if want and w.get('name') != want and w.get('id') != want:
+    name = w.get('name', '')
+    if name in seen:
         continue
+    seen.add(name)
     print(w['id'])
 " | tr -d '\r')
 
