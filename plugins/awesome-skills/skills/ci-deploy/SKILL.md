@@ -80,13 +80,21 @@ Invoke the bundled script. It is idempotent and safe to re-run.
 .claude/skills/ci-deploy/scripts/deploy.sh <env>
 ```
 
+On Windows PowerShell, invoke the bundled wrapper instead. It finds Git Bash,
+reads the Windows CircleCI CLI token if needed, and forwards all arguments to
+`deploy.sh`:
+
+```powershell
+.\.claude\skills\ci-deploy\scripts\deploy.ps1 <env>
+```
+
 `<env>` is optional (see resolution above). Useful options:
 
 ```bash
 deploy.sh <env> --repo <owner/repo>     # remote mode: deploy a repo you haven't cloned
 deploy.sh <env> --branch <name>         # override the branch (remote mode defaults to master)
 deploy.sh <env> --sha <commit>          # target a specific commit instead of the branch tip
-deploy.sh <env> --workflow <name>       # pin the workflow when a pipeline has several
+deploy.sh <env> --workflow <name-or-id>  # pin the workflow when a pipeline has several
 deploy.sh <env> --deploy-job <name>     # explicit deploy job (resolves exit-9 ambiguity)
 deploy.sh <env> --approval-job <name>   # explicit approval gate
 deploy.sh <env> --test-job <name>       # restrict the "build failed" check to one job
@@ -144,7 +152,7 @@ fixed, tell them a local clone is required first.
 - **Target commit**: the current branch's remote tip by default (`--sha` overrides).
 - **Pipeline**: the CircleCI pipeline whose revision matches the target commit on
   the current branch.
-- **Workflow**: the workflow in that pipeline containing a deploy job (`--workflow` to pin).
+- **Workflow**: the workflow in that pipeline containing a deploy job (`--workflow` to pin by name or workflow ID).
 - **Deploy / approval / test jobs**: by naming convention — a deploy job is
   `deploy_<env>` / `deploy-<env>` / `release-<env>` etc.; the approval gate is the
   approval-type job matching the environment; everything else is a build/test job.
@@ -190,6 +198,10 @@ automatically picks up the new tip of the current branch.
 2. **Fetch the failed step output.** Run:
    ```bash
    .claude/skills/ci-deploy/scripts/fetch_failed_logs.sh <workflow-id>
+   ```
+   On Windows PowerShell, use:
+   ```powershell
+   .\.claude\skills\ci-deploy\scripts\fetch_failed_logs.ps1 <workflow-id>
    ```
    With no job name it inspects every failed job and tails each failed step to
    ~300 lines, so you read the actual diagnostic, not 50k lines of resolver
@@ -285,6 +297,10 @@ Pause and ask the user the moment any of these hit:
 - A CircleCI token with read+approve access to the project. The script reads
   `$CIRCLECI_TOKEN` first, then falls back to `~/.circleci/cli.yml`.
 - `git`, `curl`, and `python3` on PATH.
+- **Windows PowerShell:** use `scripts\deploy.ps1` or
+  `scripts\fetch_failed_logs.ps1`. The wrappers require Git for Windows, or set
+  `CI_DEPLOY_BASH` to a compatible `bash.exe`; they reuse the same arguments as
+  the `.sh` scripts.
 - **Local mode:** run from inside the project's git repository (the script needs
   `origin` and the current branch).
 - **Remote mode (`--repo`):** an authenticated `gh` CLI (`gh auth status`). No

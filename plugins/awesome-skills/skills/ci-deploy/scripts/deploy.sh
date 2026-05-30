@@ -23,7 +23,7 @@
 #                          remote default: master).
 #   --sha <sha>            Deploy a specific commit (local default: branch's
 #                          remote tip; remote default: latest pipeline on branch).
-#   --workflow <name>      Pin the workflow when a pipeline has several.
+#   --workflow <name-or-id>  Pin the workflow when a pipeline has several.
 #   --deploy-job <name>    Explicit deploy job (used when detection is ambiguous).
 #   --approval-job <name>  Explicit approval gate job.
 #   --test-job <name>      Restrict the "build failed" check to this one job.
@@ -66,9 +66,9 @@ done
 
 # ─── token ──────────────────────────────────────────────────────────────────
 if [[ -n "${CIRCLECI_TOKEN:-}" ]]; then
-  CC_TOKEN="$CIRCLECI_TOKEN"
+  CC_TOKEN="$(printf '%s' "$CIRCLECI_TOKEN" | tr -d '\r')"
 elif [[ -f "$HOME/.circleci/cli.yml" ]]; then
-  CC_TOKEN=$(awk '/^token:/ {print $2}' "$HOME/.circleci/cli.yml" || true)
+  CC_TOKEN=$(awk '/^token:/ {print $2}' "$HOME/.circleci/cli.yml" | tr -d '\r' || true)
 fi
 if [[ -z "${CC_TOKEN:-}" ]]; then
   echo "error: no CircleCI token found. Set CIRCLECI_TOKEN or run 'circleci setup'." >&2
@@ -104,7 +104,7 @@ if 'bitbucket' in host:
     print('bb', 'bitbucket', owner_repo)
 else:
     print('gh', 'github', owner_repo)
-")"
+" | tr -d '\r')"
   if [[ -z "${OWNER_REPO:-}" ]]; then
     echo "error: could not parse a GitHub/Bitbucket project from origin remote ('$REMOTE_URL')." >&2
     exit 1
@@ -120,7 +120,7 @@ if [[ -n "$BRANCH_ARG" ]]; then
 elif [[ -n "$REPO_ARG" ]]; then
   BRANCH="master"
 else
-  BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
+  BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr -d '\r' || echo HEAD)
 fi
 
 # Target SHA: explicit flag wins. In remote mode without --sha we leave it empty
@@ -133,6 +133,7 @@ elif [[ -n "$REPO_ARG" ]]; then
 else
   git fetch origin "$BRANCH" --quiet 2>/dev/null || true
   TARGET_SHA=$(git rev-parse "origin/$BRANCH" 2>/dev/null || git rev-parse HEAD)
+  TARGET_SHA="$(printf '%s' "$TARGET_SHA" | tr -d '\r')"
 fi
 
 if [[ -n "$TARGET_SHA" ]]; then
@@ -158,7 +159,7 @@ if not target:
 for p in items:
     if p.get('vcs', {}).get('revision', '') == target:
         print(p['id']); sys.exit(0)
-")
+" | tr -d '\r')
 if [[ -z "$PIPELINE_ID" ]]; then
   echo "error: no CircleCI pipeline found for $SHORT_SHA on '$BRANCH'." >&2
   echo "Hint: CI may not have picked up the commit yet. Try again in a minute, or check" >&2
@@ -190,10 +191,10 @@ want = os.environ.get('WF_NAME', '')
 data = json.load(sys.stdin)
 items = sorted(data.get('items', []), key=lambda w: w.get('created_at', ''), reverse=True)
 for w in items:
-    if want and w.get('name') != want:
+    if want and w.get('name') != want and w.get('id') != want:
         continue
     print(w['id'])
-")
+" | tr -d '\r')
 
 if [[ ${#CANDIDATE_IDS[@]} -eq 0 ]]; then
   echo "error: no workflow with a deploy job found in pipeline $PIPELINE_ID." >&2
@@ -221,7 +222,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 set +e
 DETECT_OUT=$(printf '%s' "$WF_JOBS_JSON" | \
   ENV_NAME="$ENV_NAME" DEPLOY_OVERRIDE="$DEPLOY_OVERRIDE" APPROVAL_OVERRIDE="$APPROVAL_OVERRIDE" \
-  EMIT_CHAIN=1 python3 "$SCRIPT_DIR/detect.py")
+  EMIT_CHAIN=1 python3 "$SCRIPT_DIR/detect.py" | tr -d '\r')
 DETECT_RC=$?
 set -e
 
@@ -309,7 +310,7 @@ for jb in data.get('items', []):
         print(jb.get('status') or '-'); break
 else:
     print('-')
-")
+" | tr -d '\r')
     echo "[deploy poll $j] $DEPLOY_JOB=$status"
     case "$status" in
       success)
@@ -337,7 +338,7 @@ run_stage() {
   local i APPROVAL_REQUEST_ID=""
   for ((i=1; i<=MAX_POLLS; i++)); do
     read -r TEST_FAIL HOLD_STATUS HOLD_APPROVAL_ID DEPLOY_STATUS \
-      <<<"$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job" | poll_status)"
+      <<<"$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job" | poll_status | tr -d '\r')"
 
     echo "[poll $i] tests=${TEST_FAIL} ${APPROVAL_JOB:-(no gate)}=$HOLD_STATUS $DEPLOY_JOB=$DEPLOY_STATUS"
 
