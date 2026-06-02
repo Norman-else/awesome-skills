@@ -328,7 +328,7 @@ if [[ ${#STAGES[@]} -gt 1 ]]; then
   echo "Cascade: $PLAN    (deploying $((${#STAGES[@]} - 1)) prerequisite env(s) before $TARGET_ENV)"
 else
   IFS=$'\t' read -r se sg sd <<<"${STAGES[0]}"
-  echo "Env: $se    deploy job: $sd    approval gate: ${sg:-(none)}"
+  echo "Env: $se    deploy job: $sd    approval gate(s): ${sg:-(none)}"
 fi
 
 # ─── per-poll status extractor ────────────────────────────────────────────────
@@ -398,70 +398,87 @@ else:
   return 8
 }
 
-# ─── one stage: wait for tests, react to the gate, monitor the deploy ─────────
-# Operates on the globals ENV_NAME / DEPLOY_JOB / APPROVAL_JOB (set per stage by
-# the cascade loop). Returns: 0 done, 5 test failed, 6 deploy failed, 7 gate
-# never held, 8 deploy timed out. Idempotent — a stage already deployed returns
-# 0 on the first poll, so re-runs skip completed work.
+# ─── one stage: clear every prerequisite gate, then monitor the deploy ────────
+# Operates on the globals ENV_NAME / DEPLOY_JOB / GATES (an ordered array of the
+# approval-gate job names this stage must clear, set per stage by the cascade
+# loop). Returns: 0 done, 5 test failed, 6 deploy failed, 7 a gate never held,
+# 8 deploy timed out.
+#
+# A stage may sit behind SEVERAL sequential gates (e.g. a build-approval that
+# unblocks the build, then a deploy-approval that unblocks the deploy). Each gate
+# only opens once the previous one is approved and its downstream job runs, so we
+# approve them one at a time, waiting for each to reach on_hold first. Stages with
+# one gate (the common case) or none (auto-deploy) are just the trivial cases of
+# this loop. Idempotent — an already-approved gate is skipped and an already-
+# deployed stage returns 0 on the first poll, so re-runs skip completed work.
 run_stage() {
-  local i APPROVAL_REQUEST_ID=""
-  for ((i=1; i<=MAX_POLLS; i++)); do
-    read -r TEST_FAIL HOLD_STATUS HOLD_APPROVAL_ID DEPLOY_STATUS \
-      <<<"$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job" | poll_status | tr -d '\r')"
+  local gate i APPROVAL_REQUEST_ID HOLD_STATUS
+  for gate in "${GATES[@]}"; do
+    [[ -z "$gate" ]] && continue        # empty field → stage has no gate
+    APPROVAL_REQUEST_ID=""
+    HOLD_STATUS=""
+    for ((i=1; i<=MAX_POLLS; i++)); do
+      read -r TEST_FAIL HOLD_STATUS HOLD_APPROVAL_ID DEPLOY_STATUS \
+        <<<"$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job" | APPROVAL_JOB="$gate" poll_status | tr -d '\r')"
 
-    echo "[poll $i] tests=${TEST_FAIL} ${APPROVAL_JOB:-(no gate)}=$HOLD_STATUS $DEPLOY_JOB=$DEPLOY_STATUS"
+      echo "[poll $i] tests=${TEST_FAIL} $gate=$HOLD_STATUS $DEPLOY_JOB=$DEPLOY_STATUS"
 
-    # Fail fast if any build/test job failed.
-    if [[ "$TEST_FAIL" != "-" ]]; then
-      echo "error: a build/test job ended with status '$TEST_FAIL' — not approving deploy." >&2
-      echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
-      return 5
-    fi
-
-    # Already past the gate (re-run / already-deployed prerequisite).
-    case "$DEPLOY_STATUS" in
-      success)
-        echo "$DEPLOY_JOB already success — skipping ($ENV_NAME)."
-        return 0 ;;
-      failed|canceled|unauthorized|infrastructure_fail|timedout|errored)
-        echo "error: $DEPLOY_JOB is in terminal failure state '$DEPLOY_STATUS'." >&2
+      # Fail fast if any build/test job failed.
+      if [[ "$TEST_FAIL" != "-" ]]; then
+        echo "error: a build/test job ended with status '$TEST_FAIL' — not approving deploy." >&2
         echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
-        return 6 ;;
-      running|queued)
-        echo "$DEPLOY_JOB is already $DEPLOY_STATUS — skipping approval and monitoring."
-        monitor_deploy; return $? ;;
-    esac
-    case "$HOLD_STATUS" in
-      success)
-        echo "$APPROVAL_JOB was already approved — monitoring deploy."
-        monitor_deploy; return $? ;;
-      on_hold)
-        APPROVAL_REQUEST_ID="$HOLD_APPROVAL_ID"
-        break ;;
-    esac
+        return 5
+      fi
 
-    if (( i < MAX_POLLS )); then sleep "$POLL_INTERVAL"; fi
+      # Deploy already terminal/running (re-run / already-deployed prerequisite).
+      case "$DEPLOY_STATUS" in
+        success)
+          echo "$DEPLOY_JOB already success — skipping ($ENV_NAME)."
+          return 0 ;;
+        failed|canceled|unauthorized|infrastructure_fail|timedout|errored)
+          echo "error: $DEPLOY_JOB is in terminal failure state '$DEPLOY_STATUS'." >&2
+          echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
+          return 6 ;;
+        running|queued)
+          echo "$DEPLOY_JOB is already $DEPLOY_STATUS — skipping remaining approvals and monitoring."
+          monitor_deploy; return $? ;;
+      esac
+
+      case "$HOLD_STATUS" in
+        success)
+          echo "$gate already approved — moving on."
+          break ;;
+        on_hold)
+          APPROVAL_REQUEST_ID="$HOLD_APPROVAL_ID"
+          echo "Approving $gate ($APPROVAL_REQUEST_ID)..."
+          cc_post "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/approve/$APPROVAL_REQUEST_ID" > /dev/null
+          echo "Approved $gate."
+          break ;;
+      esac
+
+      if (( i < MAX_POLLS )); then sleep "$POLL_INTERVAL"; fi
+    done
+
+    # The gate neither opened nor was already approved within the window.
+    if [[ "$HOLD_STATUS" != "success" && ( -z "$APPROVAL_REQUEST_ID" || "$APPROVAL_REQUEST_ID" == "-" ) ]]; then
+      echo "error: gate '$gate' never reached on_hold within ~13 min. Check the workflow manually." >&2
+      echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
+      return 7
+    fi
   done
 
-  if [[ -z "$APPROVAL_REQUEST_ID" || "$APPROVAL_REQUEST_ID" == "-" ]]; then
-    echo "error: ${APPROVAL_JOB:-approval gate} never reached on_hold within ~13 min. Check the workflow manually." >&2
-    echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
-    return 7
-  fi
-
-  echo "Approving $APPROVAL_JOB ($APPROVAL_REQUEST_ID)..."
-  cc_post "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/approve/$APPROVAL_REQUEST_ID" > /dev/null
-  echo "Approved. Watch deploy at: https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID"
-
+  # Every gate cleared (or the stage had none) — watch the deploy to completion.
+  echo "Watch deploy at: https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID"
   monitor_deploy
   return $?
 }
 
 # ─── cascade: walk every stage from the earliest prerequisite to the target ───
 for s in "${STAGES[@]}"; do
-  IFS=$'\t' read -r ENV_NAME APPROVAL_JOB DEPLOY_JOB <<<"$s"
+  IFS=$'\t' read -r ENV_NAME GATES_CSV DEPLOY_JOB <<<"$s"
+  IFS=',' read -ra GATES <<<"$GATES_CSV"   # ordered approval gates for this stage
   if [[ ${#STAGES[@]} -gt 1 ]]; then
-    echo "── Stage: $ENV_NAME ($DEPLOY_JOB, gate ${APPROVAL_JOB:-none}) ──"
+    echo "── Stage: $ENV_NAME ($DEPLOY_JOB, gates: ${GATES_CSV:-none}) ──"
   fi
 
   set +e

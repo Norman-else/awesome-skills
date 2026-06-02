@@ -67,6 +67,27 @@ skipped, so it stays idempotent on re-runs and partial pipelines.
 Single-environment pipelines (one deploy job, like a dev-only repo) are just a
 one-stage chain — behaviour is unchanged.
 
+### Multiple approval gates per stage (auto-detected)
+
+A stage isn't limited to a single gate. Some pipelines guard one environment with
+**several sequential approvals** — e.g. `hold_build_prod → build_prod → hold_prod
+→ deploy_prod`, where the first gate releases the build and the second releases
+the deploy. The script derives the **complete ordered set of approval gates** on
+each deploy job's dependency path straight from the graph (no per-repo config) and
+clears them one at a time: approve `hold_build_prod` → wait for `build_prod` →
+approve `hold_prod` → watch `deploy_prod`. This generalises to any workflow shape:
+
+- one gate per deploy (the common `hold_x → deploy_x`) → approve the one gate;
+- several sequential gates → approve each in dependency order, waiting for each to
+  open (a later gate often stays `blocked` until the earlier one's build runs);
+- no gate (auto-deploy) → approve nothing, just watch the deploy;
+- cascaded stages → each stage clears only its own gates; a prerequisite env's gate
+  is never re-approved under a later env.
+
+Because the gate set is graph-derived, **multiple env-matching approval jobs are no
+longer an exit-9 ambiguity** — they're simply that stage's gate list. `--approval-job`
+still overrides the target stage when you need to pin one explicitly.
+
 **Announce the plan.** The script prints a `Cascade: dev → sat → prod` line once
 it resolves the chain (it appears early in the background output). When the chain
 has more than one stage, relay it to the user up front so they know prod will be
@@ -262,7 +283,10 @@ Pause and ask the user the moment any of these hit:
 - **Exit 9** — multiple jobs match (e.g. `deploy_dev` and `deploy_dev_canary`, or
   several workflows have deploy jobs). The script prints the candidates. Pick the
   right one and re-run with `--deploy-job` / `--approval-job` / `--workflow`. If
-  it's genuinely unclear which is correct, ask the user.
+  it's genuinely unclear which is correct, ask the user. **Note:** multiple
+  *approval gates* on a stage's path are NOT an exit-9 case — they're auto-detected
+  and approved in order (see "Multiple approval gates per stage" above). Exit 9 is
+  only for ambiguous **deploy jobs** or **workflows**.
 - **Re-runs are handled automatically — they no longer trip exit 9.** When a
   pipeline holds several workflow *runs of the same name* (CircleCI leaves the
   superseded runs `canceled` after a "rerun from beginning/failed"), the script

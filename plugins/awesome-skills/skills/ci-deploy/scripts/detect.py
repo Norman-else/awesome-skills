@@ -89,7 +89,13 @@ def resolve_target(jobs, env, deploy_override, approval_override):
         env = envs[0]
         deploy_job = [n for n in deploy_jobs if env_token(n) == env][0]
 
-    # --- approval gate ---
+    # --- approval gate (single-line/legacy hint only) ---
+    # The authoritative gate set per stage is derived from the dependency graph in
+    # build_chain(), which handles stages that sit behind SEVERAL sequential gates
+    # (e.g. a build-approval then a deploy-approval). So multiple env-matching gates
+    # is NOT an ambiguity here — we just leave this legacy single-gate hint empty
+    # and let the chain resolve every gate in order. An explicit --approval-job
+    # still wins (and overrides the target stage's gate list in main()).
     if approval_override:
         approval_job = approval_override
     else:
@@ -97,8 +103,7 @@ def resolve_target(jobs, env, deploy_override, approval_override):
         if len(env_appr) == 1:
             approval_job = env_appr[0]
         elif len(env_appr) > 1:
-            die(9, "Multiple approval gates match env '%s': %s" % (env, env_appr),
-                   "Re-run with --approval-job <name>.")
+            approval_job = ""        # multiple gates → defer to build_chain
         elif len(approval_names) == 1:
             approval_job = approval_names[0]
         else:
@@ -108,30 +113,43 @@ def resolve_target(jobs, env, deploy_override, approval_override):
 
 
 def build_chain(jobs, target_deploy):
-    """Return the ordered list of (env, approval_job, deploy_job) stages that are
-    prerequisites of (and including) target_deploy, derived from the dependency
-    graph. Earliest first, target last.
+    """Return the ordered list of (env, gates, deploy_job) stages that are
+    prerequisites of (and including) target_deploy, derived purely from the job
+    dependency graph. Earliest first, target last.
 
-    A stage is every deploy-shaped build job among target_deploy's transitive
-    ancestors (plus the target itself); its gate is the approval-type job in its
-    direct dependencies (empty if it has none)."""
+    A stage is every deploy-shaped job among target_deploy's transitive ancestors
+    (plus the target itself). `gates` is the ORDERED list of every approval-type
+    job that this stage must clear — i.e. the approval jobs among the stage's own
+    transitive ancestors, excluding anything already owned by an earlier deploy
+    stage — sorted earliest-gate-first by dependency depth.
+
+    This generalises to any workflow shape without per-repo configuration:
+      * one gate per deploy (the common `hold_x -> deploy_x`)  -> gates == [hold_x]
+      * several SEQUENTIAL gates before a deploy
+        (`hold_build_x -> build_x -> hold_x -> deploy_x`)       -> [hold_build_x, hold_x]
+      * a deploy with NO gate (auto-deploy)                     -> []
+      * cascaded stages (deploy_sat depends on deploy_dev)      -> each stage keeps
+        only its own gates; dev's gate is not re-approved under sat.
+    """
     by_id = {j.get("id"): j for j in jobs}
     by_name = {j.get("name"): j for j in jobs}
     target = by_name.get(target_deploy)
     if target is None:
-        # Target not in the live job list yet — fall back to a single stage.
-        return [(env_token(target_deploy), "", target_deploy)]
+        # Target not in the live job list yet — fall back to a single gateless stage.
+        return [(env_token(target_deploy), [], target_deploy)]
 
-    # Transitive ancestors of the target (the target itself included).
-    ancestors = set()
-    stack = [target.get("id")]
-    while stack:
-        jid = stack.pop()
-        if jid in ancestors:
-            continue
-        ancestors.add(jid)
-        for dep in (by_id.get(jid, {}).get("dependencies") or []):
-            stack.append(dep)
+    def ancestors_of(start_id):
+        """Transitive ancestors of start_id, including start_id itself."""
+        seen = set()
+        stack = [start_id]
+        while stack:
+            jid = stack.pop()
+            if jid in seen:
+                continue
+            seen.add(jid)
+            for dep in (by_id.get(jid, {}).get("dependencies") or []):
+                stack.append(dep)
+        return seen
 
     # Memoised depth = longest path from a root, for topological ordering.
     depth_cache = {}
@@ -145,23 +163,32 @@ def build_chain(jobs, target_deploy):
         depth_cache[jid] = d
         return d
 
-    # Deploy-shaped build jobs on the path to the target.
-    stages = []
-    for jid in ancestors:
-        j = by_id.get(jid, {})
-        name = j.get("name", "")
-        if j.get("type") == "approval" or not KW.search(name):
-            continue
-        gate = ""
-        for dep in (j.get("dependencies") or []):
-            dj = by_id.get(dep, {})
-            if dj.get("type") == "approval":
-                gate = dj.get("name", "")
-                break
-        stages.append((depth(jid), env_token(name), gate, name))
+    target_anc = ancestors_of(target.get("id"))
 
-    stages.sort(key=lambda s: s[0])
-    return [(env, gate, deploy) for _depth, env, gate, deploy in stages]
+    # Deploy-shaped jobs on the path to the target (the stages), earliest first.
+    deploy_ids = [
+        jid for jid in target_anc
+        if by_id.get(jid, {}).get("type") != "approval"
+        and KW.search(by_id.get(jid, {}).get("name", ""))
+    ]
+    deploy_ids.sort(key=depth)
+
+    stages = []
+    for d_id in deploy_ids:
+        d_anc = ancestors_of(d_id)
+        # Jobs already owned by an EARLIER deploy stage in this stage's lineage —
+        # so a cascaded prerequisite deploy's gates aren't re-approved here.
+        claimed = set()
+        for e_id in deploy_ids:
+            if e_id != d_id and e_id in d_anc:
+                claimed |= ancestors_of(e_id)
+        local = d_anc - claimed
+        gate_ids = [g for g in local if by_id.get(g, {}).get("type") == "approval"]
+        gate_ids.sort(key=depth)
+        gates = [by_id[g].get("name", "") for g in gate_ids]
+        stages.append((env_token(by_id[d_id].get("name", "")), gates, by_id[d_id].get("name", "")))
+
+    return stages
 
 
 def main():
@@ -177,9 +204,14 @@ def main():
 
     if os.environ.get("EMIT_CHAIN", "").strip() in ("1", "true", "yes"):
         chain = build_chain(jobs, deploy_job)
+        # An explicit --approval-job pins the TARGET (last) stage to that one gate.
+        if approval_override and chain:
+            env_last, _gates, dep_last = chain[-1]
+            chain[-1] = (env_last, [approval_override], dep_last)
         sys.stdout.write("ENV\t%s\n" % env)
-        for stage_env, gate, deploy in chain:
-            sys.stdout.write("STAGE\t%s\t%s\t%s\n" % (stage_env, gate, deploy))
+        for stage_env, gates, deploy in chain:
+            # gates joined by ',' — CircleCI job names never contain a comma.
+            sys.stdout.write("STAGE\t%s\t%s\t%s\n" % (stage_env, ",".join(gates), deploy))
     else:
         sys.stdout.write("%s\t%s\t%s\n" % (env, deploy_job, approval_job))
 
