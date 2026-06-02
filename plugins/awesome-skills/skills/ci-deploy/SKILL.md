@@ -98,6 +98,8 @@ deploy.sh <env> --workflow <name-or-id>  # pin the workflow when a pipeline has 
 deploy.sh <env> --deploy-job <name>     # explicit deploy job (resolves exit-9 ambiguity)
 deploy.sh <env> --approval-job <name>   # explicit approval gate
 deploy.sh <env> --test-job <name>       # restrict the "build failed" check to one job
+deploy.sh <env> --rerun                 # cancel + rerun the workflow from START, then watch the fresh run
+deploy.sh <env> --rerun-from-failed     # cancel + rerun only failed jobs + downstream, then watch
 ```
 
 The path above assumes the skill is installed into a project's `.claude/skills/`.
@@ -281,8 +283,46 @@ Pause and ask the user the moment any of these hit:
   .claude/skills/ci-deploy/scripts/fetch_failed_logs.sh <workflow-id> <deploy-job-name>
   ```
   Don't auto-retry — deploy failures often indicate environment drift (missing
-  secret, image push failure, infra service down) and need eyes on them.
+  secret, image push failure, infra service down) and need eyes on them. **Once
+  the root cause is fixed** (the secret added, the image pushed, the policy
+  granted), rerun the deploy with `--rerun` rather than manually poking CircleCI —
+  see "Rerunning a workflow" below.
 - **Exit 7 / 8** — timeouts. Don't blindly retry; surface to the user.
+
+## Rerunning a workflow (`--rerun` / `--rerun-from-failed`)
+
+A deploy job that has already failed sits in a **terminal `failed` state**. Plain
+re-invocation of `deploy.sh` will *not* retry it — `run_stage` sees the terminal
+failure on its first poll and returns exit 6 immediately. To actually re-run the
+deploy you must trigger a CircleCI rerun, and the script does this for you:
+
+- `--rerun` — **rerun from the start.** Cancels the current run, waits for it to
+  reach a terminal state, triggers a fresh full run, and switches to watching the
+  new workflow id. Build/test jobs re-run and the approval gates re-open (the
+  cascade re-approves them). This is the right choice after fixing an external
+  cause of a deploy failure, because it discards any stale/cached run state — a
+  `--rerun-from-failed` can re-fail instantly by reusing the same bad state.
+- `--rerun-from-failed` — **rerun only the failed jobs + their downstream.** Reuses
+  upstream successes and already-approved gates. Faster, but keeps prior run state;
+  use only when you're confident the failed job will behave differently on a plain
+  re-run (rarely the case for env-drift failures).
+
+**Why a cancel is needed first.** CircleCI only reruns a workflow that is in a
+terminal state. A run that still has a later gate `on_hold` (e.g. `hold_prod`
+awaiting approval) stays `failing`/`on_hold` indefinitely and the rerun API
+returns `400 Workflow must be in a terminal state to be rerun`. The script cancels
+the run to force a terminal state before rerunning — this is safe: cancelling does
+**not** roll back environments already deployed, it only stops pending gates.
+
+Typical recovery flow for a deploy failure you've since fixed:
+
+```bash
+# fix the root cause (push the image / add the secret / grant the ECR policy) …
+deploy.sh sat --repo Mercaso/<repo> --branch master --sha <sha> --rerun
+```
+
+Run it in the background like any other deploy; it walks the cascade to the target
+on the fresh run and reports success or the next failure.
 
 ## Exit code reference
 

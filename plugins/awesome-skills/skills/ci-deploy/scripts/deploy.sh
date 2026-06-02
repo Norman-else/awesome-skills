@@ -27,6 +27,13 @@
 #   --deploy-job <name>    Explicit deploy job (used when detection is ambiguous).
 #   --approval-job <name>  Explicit approval gate job.
 #   --test-job <name>      Restrict the "build failed" check to this one job.
+#   --rerun                Rerun the matched workflow from the START before
+#                          watching. Cancels the current run first (CircleCI only
+#                          reruns terminal workflows), then watches the fresh run.
+#                          Use to retry a deploy that failed on stale/cached state.
+#   --rerun-from-failed    Rerun only the failed jobs + downstream (reuses upstream
+#                          successes and approved gates). Faster; use when the fix
+#                          is external (env/secret) and the job just needs rerunning.
 #   --no-autofix           Accepted for parity; the auto-fix loop lives in the
 #                          agent, not this script.
 #
@@ -47,6 +54,7 @@ APPROVAL_OVERRIDE=""
 TEST_OVERRIDE=""
 REPO_ARG=""
 BRANCH_ARG=""
+RERUN_MODE=""          # "" | "from-start" | "from-failed"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -57,6 +65,8 @@ while [[ $# -gt 0 ]]; do
     --deploy-job)   DEPLOY_OVERRIDE="${2:-}"; shift 2 ;;
     --approval-job) APPROVAL_OVERRIDE="${2:-}"; shift 2 ;;
     --test-job)     TEST_OVERRIDE="${2:-}"; shift 2 ;;
+    --rerun)             RERUN_MODE="from-start"; shift ;;
+    --rerun-from-failed) RERUN_MODE="from-failed"; shift ;;
     --no-autofix)   shift ;;
     -h|--help)      sed -n '2,40p' "$0"; exit 0 ;;
     -*)             echo "error: unknown flag: $1" >&2; exit 1 ;;
@@ -221,6 +231,51 @@ if [[ ${#CANDIDATE_IDS[@]} -gt 1 ]]; then
 fi
 WORKFLOW_ID="${CANDIDATE_IDS[0]}"
 echo "Workflow: $WORKFLOW_ID"
+
+# ─── optional: rerun the workflow before watching (--rerun / --rerun-from-failed) ─
+# CircleCI only reruns a workflow that is in a TERMINAL state. A live run that is
+# still on_hold (e.g. a later prod gate awaiting approval) never terminates on its
+# own, so we cancel it first to force a terminal state, then trigger the rerun and
+# switch to watching the NEW run that comes back.
+#   --rerun             → rerun from the start (fresh build; gates re-open, so a
+#                         prior deploy failure caused by stale/cached state clears).
+#   --rerun-from-failed → rerun only the failed jobs and their downstream, reusing
+#                         upstream successes and already-approved gates (faster, but
+#                         keeps prior run state — use when the fix is purely external,
+#                         e.g. an env/secret change, and the failed job just needs
+#                         to run again).
+# After the rerun, $WORKFLOW_ID points at the new run and the normal detect →
+# cascade → watch flow below proceeds against it unchanged.
+if [[ -n "$RERUN_MODE" ]]; then
+  echo "Rerun requested ($RERUN_MODE) — canceling $WORKFLOW_ID to reach a terminal state..."
+  cc_post "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/cancel" > /dev/null 2>&1 || true
+  for ((k=1; k<=15; k++)); do
+    WSTAT=$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID" \
+      | python3 -c "import json,sys; print(json.load(sys.stdin).get('status',''))" | tr -d '\r')
+    case "$WSTAT" in canceled|failed|success|error) break ;; esac
+    sleep 4
+  done
+  RERUN_BODY='{}'
+  [[ "$RERUN_MODE" == "from-failed" ]] && RERUN_BODY='{"from_failed": true}'
+  NEW_WF=$(cc_post -H "Content-Type: application/json" -d "$RERUN_BODY" \
+    "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/rerun" \
+    | python3 -c "import json,sys; print(json.load(sys.stdin).get('workflow_id',''))" | tr -d '\r')
+  if [[ -z "$NEW_WF" ]]; then
+    echo "error: rerun did not return a new workflow id (was the old run terminal?)." >&2
+    exit 9
+  fi
+  WORKFLOW_ID="$NEW_WF"
+  echo "Rerun started. New workflow: $WORKFLOW_ID"
+  echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID"
+  # The new run's jobs may take a moment to materialize; wait until they appear so
+  # detect.py can resolve the chain from a populated job list.
+  for ((k=1; k<=15; k++)); do
+    NJOBS=$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job" \
+      | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('items',[])))" 2>/dev/null | tr -d '\r')
+    [[ "${NJOBS:-0}" -gt 0 ]] && break
+    sleep 3
+  done
+fi
 
 WF_JOBS_JSON=$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job")
 
