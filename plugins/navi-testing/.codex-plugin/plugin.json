@@ -1,6 +1,6 @@
 {
   "name": "navi-testing",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Post-deploy smoke testing for the Navi Slack agent: drives a dedicated Slack test channel, runs scenarios end-to-end, and verifies each on three layers (reaction + reply + dev DB execution trace). Requires Slack + PostgreSQL MCP integrations.",
   "author": {
     "name": "Norman",
