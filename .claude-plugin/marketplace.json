@@ -31,6 +31,21 @@
         "codex",
         "claude-code"
       ]
+    },
+    {
+      "name": "navi-testing",
+      "description": "Post-deploy smoke testing for the Navi Slack agent: drives a dedicated Slack test channel, runs scenarios end-to-end, verifies reaction + reply + the dev DB execution trace, and reports pass/fail. Install separately; requires Slack + PostgreSQL MCP integrations.",
+      "source": "./plugins/navi-testing",
+      "version": "0.1.0",
+      "category": "productivity",
+      "tags": [
+        "navi",
+        "slack",
+        "smoke-test",
+        "post-deploy",
+        "codex",
+        "claude-code"
+      ]
     }
   ]
 }

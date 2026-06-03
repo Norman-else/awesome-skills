@@ -1,0 +1,36 @@
+{
+  "name": "navi-testing",
+  "version": "0.1.0",
+  "description": "Post-deploy smoke testing for the Navi Slack agent: drives a dedicated Slack test channel, runs scenarios end-to-end, and verifies each on three layers (reaction + reply + dev DB execution trace). Requires Slack + PostgreSQL MCP integrations.",
+  "author": {
+    "name": "Norman",
+    "url": "https://github.com/Norman-else"
+  },
+  "homepage": "https://github.com/Norman-else/awesome-skills",
+  "repository": "https://github.com/Norman-else/awesome-skills",
+  "license": "MIT",
+  "keywords": [
+    "navi",
+    "slack",
+    "smoke-test",
+    "post-deploy",
+    "codex",
+    "claude-code"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Navi Testing",
+    "shortDescription": "Run post-deploy smoke tests against the Navi Slack agent.",
+    "longDescription": "Drives a dedicated Slack test channel to exercise the deployed Navi agent end-to-end. Sends each scenario's message, watches Navi's reaction lifecycle and thread reply, queries the corresponding execution trace from the dev PostgreSQL, judges the outcome against the scenario's expected result, and reports failures with the scenario, what Navi actually did, and what was expected. Keep adding scenarios after each deploy.",
+    "developerName": "Norman",
+    "category": "Productivity",
+    "capabilities": [
+      "Skills"
+    ],
+    "websiteURL": "https://github.com/Norman-else/awesome-skills",
+    "defaultPrompt": [
+      "Use $navi-testing to run the Navi post-deploy smoke tests and report any failures."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

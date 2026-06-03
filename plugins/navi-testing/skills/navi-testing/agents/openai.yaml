@@ -1,0 +1,13 @@
+interface:
+  display_name: "Navi Testing"
+  short_description: "Post-deploy smoke tests for the Navi Slack agent."
+  default_prompt: "Run the Navi post-deploy smoke tests with $navi-testing: send each scenario to the test channel, verify reaction + reply + the dev DB trace, and report any failures with sent message, actual result, and expected result."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "slack"
+      description: "Slack MCP — post messages, read thread replies and reactions, look up users"
+    - type: "mcp"
+      value: "mac-postgresql"
+      description: "PostgreSQL MCP — read-only access to the dev agent trace tables"
