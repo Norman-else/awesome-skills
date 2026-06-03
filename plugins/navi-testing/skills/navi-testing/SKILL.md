@@ -113,9 +113,12 @@ interleave. For each scenario:
     -- tool calls (names, status, errors)
     SELECT round_num, tool_name, status, error_message, result_size
     FROM agent_trace_tool_calls WHERE trace_id = '{trace_id}' ORDER BY started_at;
-    -- sub-agent delegations
-    SELECT requested_agent_type, resolved_agent_type, task_summary
+    -- sub-agent delegations (which specialist was scheduled, and its child trace)
+    SELECT requested_agent_type, resolved_agent_type, child_trace_id, task_summary
     FROM agent_trace_delegations WHERE trace_id = '{trace_id}';
+    -- did each dispatched agent actually run, and finish clean? (one row per child)
+    SELECT trace_id, agent_type, status, error_message
+    FROM agent_traces WHERE trace_id IN ({child_trace_ids from the row(s) above});
     -- nodes traversed
     SELECT node_name, duration_ms FROM agent_trace_nodes
     WHERE trace_id = '{trace_id}' ORDER BY entered_at;
@@ -127,8 +130,9 @@ interleave. For each scenario:
 
 ### 4. Judge (all three must agree)
 Each scenario gives a plain-language **`expect`** (what the reply should convey +
-what Navi should / must not do) and an optional **`note`**. You translate that
-intent into the three-layer check — the scenario does **not** hand you exact tool
+what Navi should / must not do), an optional **`agents`** list (the specialist
+sub-agents that must be dispatched), and an optional **`note`**. You translate
+that intent into the layered check — the scenario does **not** hand you exact tool
 names or status strings, so match against intent, not literal text:
 - **Reaction**: terminal success (`white_check_mark`) unless `expect`/`note` calls
   out a different terminal state (e.g. the safety gate's stop-for-approval).
@@ -142,9 +146,22 @@ names or status strings, so match against intent, not literal text:
   safety gate). Map the human's intent onto whatever the real tool/status names
   turn out to be; never fail a scenario merely because a tool is named differently
   than you guessed.
+- **Agent routing** (when `agents` is set — this assertion *is* exact, because the
+  scheduled specialist is the behavior under test): for **each** agent named in
+  `agents`, confirm a delegation `resolved_agent_type` matches it **and** that
+  child trace actually ran with a clean terminal status (not just requested). It
+  is a FAIL if an expected agent was never dispatched, its child trace errored or
+  is missing, or a clearly different specialist was scheduled in its place. For a
+  multi-agent fan-out, every listed agent must be present (extra agents are fine
+  unless `expect` says otherwise). `agents: none` asserts the **opposite** — no
+  delegation occurred and Navi answered directly; a delegation row then = FAIL.
+  Note `requested_agent_type` can differ from `resolved_agent_type`; judge on
+  **resolved** (what actually ran), and flag a requested≠resolved mismatch as a
+  finding worth reporting.
 
-If any layer disagrees → FAIL. A green ✅ with a wrong reply or a trace error is
-still a FAIL — that's the whole point of looking past the emoji.
+If any layer disagrees → FAIL. A green ✅ with a wrong reply, a trace error, or the
+wrong agent scheduled is still a FAIL — that's the whole point of looking past the
+emoji.
 
 ### 5. (optional) Cleanup
 If the scenario defines cleanup (sandbox artifacts), note it. Do not perform
@@ -183,8 +200,9 @@ FAIL — {scenario.id}: {scenario.title}
   reply:     {Navi's actual reply, trimmed}
   trace:     trace_id={id} status={status} rounds={n} error={error_message or none}
              tools=[{tool_name:status, ...}]  delegations=[{resolved_agent_type, ...}]
-  expected:  {scenario.expect (+ note), in plain words}
-  diverged:  {one-line diagnosis of which layer(s) disagreed and how}
+  expected:  {scenario.expect (+ agents + note), in plain words}
+  diverged:  {one-line diagnosis of which layer(s) disagreed and how — name the
+             wrong/missing agent when routing is what failed}
 ```
 
 For passes, one line each: `PASS — {id}: {title}`.

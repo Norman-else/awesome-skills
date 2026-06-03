@@ -10,6 +10,15 @@ The skill runs them top to bottom and judges each on all three layers
 > strings** (e.g. `get_jira_tickets`, `success`): they drift between deploys and
 > are easy to get wrong. Say what Navi *should do* and especially what it *must
 > not do* (no writes, no errors); let the judge map that to the trace.
+>
+> **Agent routing is the exception you _should_ assert.** Unlike volatile tool
+> names, *which specialist agent gets dispatched* is the routing decision under
+> test, and the agent set is small and stable. When a scenario should fan out to
+> sub-agents, list them in the optional **`agents`** field. The judge then proves,
+> from the trace, that **each named agent was actually resolved and ran cleanly**
+> (`agent_trace_delegations.resolved_agent_type` + the child trace's status) — not
+> just that *some* delegation happened. It FAILS if an expected agent never ran,
+> ran with an error, or a clearly wrong specialist was scheduled in its place.
 
 ## Scenario template (copy this)
 
@@ -18,6 +27,11 @@ The skill runs them top to bottom and judges each on all three layers
 - **message**: the exact text to send (the skill prepends `@Navi` + a nonce)
 - **expect**: what a correct reply should convey, AND what Navi should / must not
   do internally (e.g. "lists my Jira tickets; read-only, no writes, finishes clean")
+- **agents** (optional): the specialist sub-agent(s) that MUST be dispatched and
+  run cleanly, by agent type — e.g. `infra-release-executor`, or
+  `[business-data-analyst, data-viz-renderer]` for a multi-agent fan-out. Omit for
+  single-agent / no-delegation scenarios. Use `none` to assert NO delegation
+  happens (Navi answers directly).
 - **note** (optional): only when there's a sandbox scope, cleanup, or a special
   terminal state (e.g. "SANDBOX ONLY", "expected to stop for approval")
 ````
@@ -26,6 +40,13 @@ Default terminal state is success (✅). Only call out a different one in `expec
 / `note` (e.g. the safety-gate scenario that should stop for approval).
 Replace `<FILL>` with your real sandbox ids (PR numbers, repo keys, service
 names, Jira project/epic, Athena db) before running.
+
+**Specialist agents observed in dev** (for the `agents` field; not exhaustive —
+confirm against the trace, new ones may appear): `default` (generic executor),
+`business-data-analyst`, `data-analysis-executor`, `data-viz-renderer`,
+`recommendation-query`, `infra-planner`, `infra-executor`, `infra-explorer`,
+`infra-release-executor`, `ai-pricing-approval`, `monthly-report-executor`,
+`imagen`.
 
 ---
 
@@ -42,6 +63,8 @@ names, Jira project/epic, Athena db) before running.
 - **message**: Show me the open Jira tickets assigned to me, just the keys and titles.
 - **expect**: a list of issue keys + titles (or a clear "none found"). Read-only:
   Navi does the Jira lookup, no writes, finishes clean.
+- **agents**: `default` — Navi delegates the lookup to the generic executor, which
+  resolves the Slack user then searches Jira and hands back. (Confirmed in dev.)
 
 ### jira-002: epic progress (read-only)
 - **message**: What's the progress on epic <FILL: epic key, e.g. PROJ-123>?
@@ -88,6 +111,11 @@ names, Jira project/epic, Athena db) before running.
 - **expect**: a reply that connects the PR to its Jira ticket and judges coverage.
   Should exercise the multi-step / sub-agent path (pulls from both GitHub and
   Jira, likely via a delegation). Read-only — no writes.
+- **agents**: assert the specialist(s) that actually own this fan-out — run it once
+  and lock the `agents` list to what the trace's `resolved_agent_type`(s) show
+  (e.g. `default`, or a dedicated research agent). The point of this scenario is
+  routing: the judge confirms the *right* agent(s) were dispatched and each child
+  trace finished clean, not merely that some delegation occurred.
 
 ## G. Sandbox execution (real writes — SANDBOX ONLY)
 
