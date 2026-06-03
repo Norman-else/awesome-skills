@@ -36,7 +36,8 @@ If a prerequisite is missing, say exactly which one and stop — do not fake a p
 
 ## Inputs
 
-- Read **`config.md`** for the channel id, Navi identity, dev DB env, timeout.
+- Read **`config.md`** for the channel id, Navi identity, dev DB env, timeout,
+  and the **report channel id** (where step 6 posts the run report).
 - Read **`scenarios.md`** for the scenarios. If the user named specific
   scenarios in their prompt, run only those; otherwise run all.
 
@@ -125,14 +126,22 @@ interleave. For each scenario:
   - Use **read-only** SELECTs only. Never write to the dev DB.
 
 ### 4. Judge (all three must agree)
-A scenario PASSES only if:
-- The reaction matches the expectation (usually `white_check_mark`; or the
-  scenario's stated terminal state), AND
-- The reply is consistent with `scenario.expected_result` (approximate / semantic
-  match — you are the judge), AND
-- The Trace matches `scenario.expected_flow`: `agent_traces.status` is the
-  expected terminal status, `error_message` is null (unless expected), and the
-  expected tools/delegations/nodes are present (and unexpected errors absent).
+Each scenario gives a plain-language **`expect`** (what the reply should convey +
+what Navi should / must not do) and an optional **`note`**. You translate that
+intent into the three-layer check — the scenario does **not** hand you exact tool
+names or status strings, so match against intent, not literal text:
+- **Reaction**: terminal success (`white_check_mark`) unless `expect`/`note` calls
+  out a different terminal state (e.g. the safety gate's stop-for-approval).
+- **Reply**: consistent with what `expect` says the reply should convey
+  (approximate / semantic match — you are the judge).
+- **Trace**: `agent_traces.status` is a clean terminal status with `error_message`
+  null (unless the scenario expects otherwise); the behavior `expect` describes is
+  borne out — the right kind of tools/delegations ran (follow delegations into
+  child traces), and anything `expect` says **must not** happen is absent (e.g. no
+  write/commit/push tools for a read-only scenario, no destructive tool for the
+  safety gate). Map the human's intent onto whatever the real tool/status names
+  turn out to be; never fail a scenario merely because a tool is named differently
+  than you guessed.
 
 If any layer disagrees → FAIL. A green ✅ with a wrong reply or a trace error is
 still a FAIL — that's the whole point of looking past the emoji.
@@ -141,7 +150,27 @@ still a FAIL — that's the whole point of looking past the emoji.
 If the scenario defines cleanup (sandbox artifacts), note it. Do not perform
 destructive cleanup automatically unless the scenario says so.
 
+### 6. Post the run report to Slack (after ALL scenarios)
+Once every scenario in the run has been judged, **always** post a single report
+message to the **report channel id** from `config.md` (defaults to the test
+channel). This runs on every completed run — pass or fail, one scenario or many.
+
+- Post as a **fresh top-level message** (do not reply into any scenario thread).
+- The report message must **NOT** `@mention` Navi and must **NOT** contain the
+  `[navi-test {nonce}]` marker — either would trigger a new Navi run or pollute
+  trace correlation. Refer to Navi by plain name only.
+- Use the **Slack report format** below (a compact variant of the terminal
+  report — Slack markdown, trimmed replies). Keep it under Slack's size limit;
+  if there are many failures, include full detail for failures and collapse
+  passes to one line each.
+- Keep the printed terminal report too — Slack is in addition to, not instead of.
+- If posting the report fails (e.g. Slack error), report that as a finding in the
+  terminal output; do not silently drop it.
+
 ## Report format
+
+Two outputs per run: the **terminal report** (full detail, below) and the
+**Slack report** (step 6 — same content, Slack-formatted and trimmed to fit).
 
 Print a summary then per-scenario detail. For **every FAILURE** include all of:
 
@@ -154,7 +183,7 @@ FAIL — {scenario.id}: {scenario.title}
   reply:     {Navi's actual reply, trimmed}
   trace:     trace_id={id} status={status} rounds={n} error={error_message or none}
              tools=[{tool_name:status, ...}]  delegations=[{resolved_agent_type, ...}]
-  expected:  {scenario.expected_result + expected_flow, in plain words}
+  expected:  {scenario.expect (+ note), in plain words}
   diverged:  {one-line diagnosis of which layer(s) disagreed and how}
 ```
 
@@ -162,6 +191,32 @@ For passes, one line each: `PASS — {id}: {title}`.
 
 End with the overall verdict and, if anything failed, a short prioritized list of
 what to investigate.
+
+### Slack report (step 6)
+
+Post this to the report channel. Same facts as the terminal report, Slack
+markdown, replies trimmed to one line. Skipped scenarios (unfilled `<FILL>` /
+missing sandbox ids) get their own line so coverage gaps are visible.
+
+```
+*Navi smoke test* — {passed}/{total} passed   ({duration}, {dev DB env})
+
+{✅ or ⚠️} *Verdict:* {one line — all green / N failed}
+
+*Passed:* {id1}, {id2}, …
+*Failed:*
+• *{id}: {title}*
+   reaction {emoji} · reply: {trimmed reply}
+   trace `{trace_id}` status={status} rounds={n} error={error or none}
+   tools=[{tool:status, …}] delegations=[{resolved_agent_type, …}]
+   diverged: {which layer(s) disagreed and how}
+*Skipped:* {ids} — {reason, e.g. unfilled <FILL> / no sandbox ids}
+
+{if failures: *Investigate first:* {1–2 prioritized items}}
+```
+
+If everything passed, drop the `*Failed:*` block. If nothing was skipped, drop
+`*Skipped:*`.
 
 ## Safety
 
