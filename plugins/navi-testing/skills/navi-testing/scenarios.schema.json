@@ -1,0 +1,71 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "navi-testing/scenarios.schema.json",
+  "title": "navi-testing scenarios",
+  "description": "Schema for scenarios.yaml. A top-level array of scenario objects.",
+  "type": "array",
+  "minItems": 1,
+  "items": { "$ref": "#/definitions/scenario" },
+  "definitions": {
+    "agent": {
+      "description": "Known agent types (observed in dev) plus 'none'. Add new real agents here. A typo will fail validation; that's the point.",
+      "type": "string",
+      "enum": [
+        "none",
+        "default",
+        "business-data-analyst",
+        "data-analysis-executor",
+        "data-viz-renderer",
+        "recommendation-query",
+        "infra-planner",
+        "infra-executor",
+        "infra-explorer",
+        "infra-release-executor",
+        "ai-pricing-approval",
+        "monthly-report-executor",
+        "imagen",
+        "skill-reviewer",
+        "fact-reviewer",
+        "scheduled-task-runner"
+      ]
+    },
+    "scenario": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "message", "expect"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*-[0-9]{3}$",
+          "description": "kebab id like jira-001"
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "message": { "type": "string", "minLength": 1 },
+        "expect": { "type": "string", "minLength": 1 },
+        "agents": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/agent" },
+          "description": "Agent type name(s). [none] asserts no delegation and must be the only element."
+        },
+        "note": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "description": "'none' must stand alone (no delegation cannot coexist with a named agent).",
+          "if": {
+            "properties": {
+              "agents": { "contains": { "const": "none" } }
+            },
+            "required": ["agents"]
+          },
+          "then": {
+            "properties": {
+              "agents": { "maxItems": 1 }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

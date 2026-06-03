@@ -29,8 +29,8 @@ running this skill is the judge — that is what absorbs LLM non-determinism.
   environment's agent database.
 - `config.md` (this skill's folder) filled in: test channel id, Navi's bot
   handle/user id, dev DB environment name, timeout.
-- `scenarios.md` (this skill's folder): the scenarios to run. The user keeps
-  adding to this file after each deploy.
+- `scenarios.yaml` (this skill's folder): the scenarios to run, validated by
+  `scenarios.schema.json`. The user keeps adding to this file after each deploy.
 
 If a prerequisite is missing, say exactly which one and stop — do not fake a pass.
 
@@ -38,7 +38,14 @@ If a prerequisite is missing, say exactly which one and stop — do not fake a p
 
 - Read **`config.md`** for the channel id, Navi identity, dev DB env, timeout,
   and the **report channel id** (where step 6 posts the run report).
-- Read **`scenarios.md`** for the scenarios. If the user named specific
+- **Validate `scenarios.yaml` first.** From the skill folder run
+  `python3 validate_scenarios.py` (needs PyYAML + jsonschema). It checks required
+  fields, id format, duplicate ids, and that every `agents` name is a known agent
+  (a typo fails here, not mid-run). If it exits non-zero, report the listed
+  problems and stop. If Python/deps are unavailable, validate `scenarios.yaml`
+  against `scenarios.schema.json` yourself before proceeding.
+- Read **`scenarios.yaml`** for the scenarios (each: `id`, `title`, `message`,
+  `expect`, optional `agents` list, optional `note`). If the user named specific
   scenarios in their prompt, run only those; otherwise run all.
 
 ## Workflow
