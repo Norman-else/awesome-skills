@@ -219,29 +219,56 @@ what to investigate.
 
 ### Slack report (step 6)
 
-Post this to the report channel. Same facts as the terminal report, Slack
-markdown, replies trimmed to one line. Skipped scenarios (unfilled `<FILL>` /
-missing sandbox ids) get their own line so coverage gaps are visible.
+Post this to the report channel. Same facts as the terminal report, but built for
+Slack mrkdwn so it stays scannable. **Follow this structure literally — one fact
+per labelled line. Do NOT write the report as flowing prose paragraphs** (that is
+what makes a run unreadable). Render exactly like this:
 
 ```
-*Navi smoke test* — {passed}/{total} passed   ({duration}, {dev DB env})
+*Navi smoke test — {passed}/{total} passed*   ·   {duration} · {dev DB env}
 
-{✅ or ⚠️} *Verdict:* {one line — all green / N failed}
+{✅ | ⚠️} *Verdict:* {one line — "all green" or "N failed, M are real bugs vs scenario drift"}
 
-*Passed:* {id1}, {id2}, …
-*Failed:*
-• *{id}: {title}*
-   reaction {emoji} · reply: {trimmed reply}
-   trace `{trace_id}` status={status} rounds={n} error={error or none}
-   tools=[{tool:status, …}] delegations=[{resolved_agent_type, …}]
-   diverged: {which layer(s) disagreed and how}
-*Skipped:* {ids} — {reason, e.g. unfilled <FILL> / no sandbox ids}
+✅ *Passed ({k})*
+• {id} — {title} ({3–6 word why, e.g. "no delegation, as asserted"})
 
-{if failures: *Investigate first:* {1–2 prioritized items}}
+❌ *Failed ({n})*
+
+*{id} — {title}*
+• reaction: {emoji}   ·   reply: {reply trimmed to ONE line}
+• trace: {trace_id} — {status}, {n} rounds, {error_message or "no error"}
+• routing: {resolved agents that ran, or "none — answered inline"}
+• expected: {scenario.expect in plain words, incl. agents/note}
+• diverged: {which layer(s) disagreed and how — name the wrong/missing agent}
+
+⏭️ *Skipped ({s})*
+• {id} — {reason, e.g. unfilled <FILL> / no sandbox ids}
+
+🔎 *Investigate first*
+1. {prioritized item}
+2. {prioritized item}
 ```
 
-If everything passed, drop the `*Failed:*` block. If nothing was skipped, drop
-`*Skipped:*`.
+Rendering rules (these are what keep it clean — the screenshot bug was breaking
+all of them):
+- **Emojis appear in only two places**: the `Verdict:` line, and after the
+  `reaction:` label. Never drop a ✅/❌/👀 into the middle of a sentence — a reader
+  can't tell whether it means "passed" or "the reaction was green". The per-section
+  ✅ *Passed* / ❌ *Failed* headers carry the verdict; individual scenarios don't
+  repeat it.
+- **Backticks only for a real identifier** you'd copy-paste (a `trace_id`). Do NOT
+  wrap tool names, agent names, status words, repo paths, or `agents=[…]` in
+  backticks — that grey-box noise is what made the old report unreadable. Write
+  them as plain words: `routing: none — answered inline (execute_direct_capability)`.
+- **One fact per `•` line.** Don't pack reaction + reply + trace + diagnosis into a
+  single run-on line. Each failed scenario is a small block of labelled lines.
+- **Trim the reply to one line** (~one sentence). If it was an error/404, say so in
+  plain words and quote just the key fragment, not the whole payload.
+- Put a blank line between failed-scenario blocks so they don't visually merge.
+
+Drop any section that's empty: no failures → drop ❌ *Failed* and 🔎 *Investigate
+first*; nothing skipped → drop ⏭️ *Skipped*. If everything passed, the whole
+report is just the title, a ✅ verdict, and the ✅ *Passed* list.
 
 ## Safety
 
