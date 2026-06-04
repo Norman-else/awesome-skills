@@ -36,8 +36,8 @@
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^[a-z][a-z0-9]*-[0-9]{3}$",
-          "description": "kebab id like jira-001"
+          "pattern": "^T-[0-9]{3}$",
+          "description": "id must be T-<NNN>, sequential from T-001 (e.g. T-001, T-002)"
         },
         "title": { "type": "string", "minLength": 1 },
         "message": { "type": "string", "minLength": 1 },
@@ -45,8 +45,8 @@
         "agents": {
           "type": "array",
           "minItems": 1,
-          "items": { "$ref": "#/definitions/agent" },
-          "description": "Agent type name(s). [none] asserts no delegation and must be the only element."
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Agent type name(s); not enum-checked, any string allowed. [none] asserts no delegation and must be the only element."
         },
         "note": { "type": "string", "minLength": 1 }
       },

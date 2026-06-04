@@ -5,24 +5,22 @@
 #     python3 validate_scenarios.py
 #
 # Fields:
-#   id       (required)  kebab-case, unique, e.g. jira-001
+#   id       (required)  T-<NNN>, unique, sequential from T-001 (pattern ^T-[0-9]{3}$)
 #   title    (required)  short human label
 #   message  (required)  exact text to send; the skill prepends @Navi + a nonce
 #   expect   (required)  plain language: what a correct reply conveys + what Navi
 #                        should / must NOT do. Do NOT hand-write exact tool names
 #                        or status strings — they drift; let the judge map intent.
 #   agents   (optional)  the specialist sub-agent(s) that MUST be dispatched and
-#                        run cleanly — names only (see scenarios.schema.json enum).
+#                        run cleanly — names only (free-form, not enum-checked).
 #                        A list: [default] or [business-data-analyst, data-viz-renderer].
 #                        Use [none] to assert NO delegation (Navi answers directly).
 #                        Agent routing is the ONE exact assertion worth making — it
 #                        is the behavior under test and the agent set is small/stable.
 #   note     (optional)  sandbox scope, cleanup, a special terminal state, or an
 #                        "agent unconfirmed — lock on first run" caveat.
-#
-# Adding a brand-new agent? add its name to the enum in scenarios.schema.json.
 
-- id: live-001
+- id: T-001
   title: capability ping
   message: "What can you help me with?"
   expect: >-
@@ -30,7 +28,7 @@
     path, no tools called. Catches model/creds/wiring breakage /health can't.
   agents: [none]
 
-- id: jira-001
+- id: T-002
   title: list my tickets
   message: "Show me the open Jira tickets assigned to me, just the keys and titles."
   expect: >-
@@ -38,49 +36,49 @@
     the Jira lookup, no writes, finishes clean.
   agents: [default]
 
-- id: jira-002
+- id: T-003
   title: epic progress (read-only)
   message: "What's the progress on epic PSOS-3786?"
   expect: >-
     A progress summary for that epic (done/total or %). Read-only, no writes, no errors.
   agents: [none]
 
-- id: jira-003
+- id: T-004
   title: create a new ticket
   message: "Create a new ticket with the title 'Test ticket' and the description 'This is a test ticket'"
   expect: >-
     A confirmation that the ticket was created. Read-only, no writes, no errors.
   agents: [default]
 
-- id: jira-005
+- id: T-005
   title: assign a ticket to me
   message: "Assign the ticket to me"
   expect: >-
     A confirmation that the ticket was assigned to me.
   agents: [none]
 
-- id: jira-006
+- id: T-006
   title: assign a ticket to a team
   message: "Assign the ticket to the Polaris team"
   expect: >-
     A confirmation that the ticket was assigned to the Polaris team.
   agents: [none]
 
-- id: jira-007
+- id: T-007
   title: assign a ticket to sprint
   message: "Assign the ticket to the current sprint of Polaris team"
   expect: >-
     A confirmation that the ticket was assigned to the current sprint.
   agents: [none]
 
-- id: jira-004
+- id: T-008
   title: Show me the tickets in current sprint of Polaris team
   message: "Show me the tickets in current sprint of Polaris team"
   expect: >-
     A list of tickets in the current sprint of Polaris team. Read-only, no writes, no errors.
   agents: [none]
 
-- id: pr-001
+- id: T-009
   title: PR details
   message: "Summarize PR #365 in infrastructure-modules: what does it change and is it ready to merge?"
   expect: >-
@@ -88,7 +86,7 @@
     no writes, no errors.
   agents: [infra-explorer]
 
-- id: repo-001
+- id: T-010
   title: code search (read-only)
   message: "Show me the current cpu and memory configuration of opsy in infra module"
   expect: >-
@@ -96,14 +94,14 @@
     anything — a read request must never trigger a write.
   agents: [infra-explorer]
 
-- id: deployment-release-001
+- id: T-011
   title: query the release deployment
   message: "What features are in the latest release of the ims?"
   expect: >-
     The features in the latest release of the ims. Read-only, no writes, no errors.
   agents: [deployment-release]
 
-- id: confluence-001
+- id: T-012
   title: query the confluence page
   message: "Is there have any page related to the VPN?"
   expect: >-
