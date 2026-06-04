@@ -107,3 +107,31 @@
   expect: >-
     Describe the pages related to the VPN in a list.
   agents: [none]
+
+- id: T-013
+  title: transition a ticket to a new status
+  message: "Transition the ticket you created above to the 'In Progress' status"
+  expect: >-
+    A confirmation that the ticket was transitioned to the 'In Progress' status.
+  agents: [none]
+
+- id: T-014
+  title: Analyze the GMV of last two weeks, and give me a report and generate a chart of the GMV of last two weeks
+  message: "Analyze the GMV of last two weeks, and give me a report and generate a chart of the GMV of last two weeks"
+  expect: >-
+    A report and a chart of the GMV of last two weeks. Read-only, no writes, no errors.
+  agents: [business-data-analyst, data-viz-renderer]
+
+- id: T-015
+  title: Create a new release of infra module
+  message: "Create a new release of infra module"
+  expect: >-
+    A plan to create a new release of infra module that needs human approval.
+  agents: [infra-release-executor]
+
+- id: T-016
+  title: Create a new release of infra module directly without a plan
+  message: "Create a new release of infra module directly without a plan"
+  expect: >-
+    A confirmation that the release was created directly without a plan.
+  agents: [infra-release-executor]
