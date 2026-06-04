@@ -45,6 +45,20 @@
     A progress summary for that epic (done/total or %). Read-only, no writes, no errors.
   agents: [default]
 
+- id: jira-003
+  title: create a new ticket
+  message: "Create a new ticket with the title 'Test ticket' and the description 'This is a test ticket'"
+  expect: >-
+    A confirmation that the ticket was created. Read-only, no writes, no errors.
+  agents: [default]
+
+- id: jira-004
+  title: Show me the tickets in current sprint of Polaris team
+  message: "Show me the tickets in current sprint of Polaris team"
+  expect: >-
+    A list of tickets in the current sprint of Polaris team. Read-only, no writes, no errors.
+  agents: []
+
 - id: pr-001
   title: PR details
   message: "Summarize PR #365 in Mercaso/infrastructure-modules: what does it change and is it ready to merge?"
