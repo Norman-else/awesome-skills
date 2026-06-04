@@ -45,35 +45,35 @@
 
 - id: T-004
   title: create a new ticket
-  message: "Create a new ticket with the title 'Test ticket' and the description 'This is a test ticket'"
+  message: "Create a new ticket with the title 'Navi - Test ticket' and the description 'This is a test ticket'"
   expect: >-
     A confirmation that the ticket was created. Read-only, no writes, no errors.
   agents: [default]
 
 - id: T-005
   title: assign a ticket to me
-  message: "Assign the ticket to me"
+  message: "Assign the ticket with the title 'Navi - Test ticket' to me"
   expect: >-
     A confirmation that the ticket was assigned to me.
   agents: [none]
 
 - id: T-006
   title: assign a ticket to a team
-  message: "Assign the ticket to the Polaris team"
+  message: "Assign the ticket with the title 'Navi - Test ticket' to the Polaris team"
   expect: >-
     A confirmation that the ticket was assigned to the Polaris team.
   agents: [none]
 
 - id: T-007
   title: assign a ticket to sprint
-  message: "Assign the ticket to the current sprint of Polaris team"
+  message: "Assign the ticket with the title 'Navi - Test ticket' to the current sprint of Polaris team"
   expect: >-
     A confirmation that the ticket was assigned to the current sprint.
   agents: [none]
 
 - id: T-008
   title: Show me the tickets in current sprint of Polaris team
-  message: "Show me the tickets in current sprint of Polaris team"
+  message: "Show me the tickets with the title 'Navi - Test ticket' in current sprint of Polaris team"
   expect: >-
     A list of tickets in the current sprint of Polaris team. Read-only, no writes, no errors.
   agents: [none]
@@ -110,7 +110,7 @@
 
 - id: T-013
   title: transition a ticket to a new status
-  message: "Transition the ticket you created above to the 'In Progress' status"
+  message: "Transition the ticket with the title 'Navi - Test ticket' to the 'In Progress' status"
   expect: >-
     A confirmation that the ticket was transitioned to the 'In Progress' status.
   agents: [none]
