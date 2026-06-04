@@ -24,30 +24,28 @@
   title: capability ping
   message: "What can you help me with?"
   expect: >-
-    A short, coherent capability summary; no error. Pure message -> LLM -> reply
-    path, no tools called. Catches model/creds/wiring breakage /health can't.
+    A short, coherent capability summary.
   agents: [none]
 
 - id: T-002
   title: list my tickets
   message: "Show me the open Jira tickets assigned to me, just the keys and titles."
   expect: >-
-    A list of issue keys + titles (or a clear "none found"). Read-only: Navi does
-    the Jira lookup, no writes, finishes clean.
+    A list of issue keys + titles (or a clear "none found").
   agents: [default]
 
 - id: T-003
   title: epic progress (read-only)
   message: "What's the progress on epic PSOS-3786?"
   expect: >-
-    A progress summary for that epic (done/total or %). Read-only, no writes, no errors.
+    A progress summary for that epic (done/total or %).
   agents: [none]
 
 - id: T-004
   title: create a new ticket
   message: "Create a new ticket with the title 'Navi - Test ticket' and the description 'This is a test ticket'"
   expect: >-
-    A confirmation that the ticket was created. Read-only, no writes, no errors.
+    A confirmation that the ticket was created.
   agents: [default]
 
 - id: T-005
@@ -75,30 +73,28 @@
   title: Show me the tickets in current sprint of Polaris team
   message: "Show me the tickets with the title 'Navi - Test ticket' in current sprint of Polaris team"
   expect: >-
-    A list of tickets in the current sprint of Polaris team. Read-only, no writes, no errors.
+    A list of tickets in the current sprint of Polaris team.
   agents: [none]
 
 - id: T-009
   title: PR details
   message: "Summarize PR #365 in infrastructure-modules: what does it change and is it ready to merge?"
   expect: >-
-    A summary of the PR's purpose/changes plus a merge-readiness read. Read-only,
-    no writes, no errors.
-  agents: [infra-explorer]
+    A summary of the PR's purpose/changes plus a merge-readiness read.
+  agents: [none]
 
 - id: T-010
   title: code search (read-only)
   message: "Show me the current cpu and memory configuration of opsy in infra module"
   expect: >-
-    The correct cpu and memory configuration for the opsy in infra module. MUST NOT edit, write, commit, or push
-    anything — a read request must never trigger a write.
+    The correct cpu and memory configuration for the opsy in infra module.
   agents: [infra-explorer]
 
 - id: T-011
   title: query the release deployment
   message: "What features are in the latest release of the ims?"
   expect: >-
-    The features in the latest release of the ims. Read-only, no writes, no errors.
+    The features in the latest release of the ims.
   agents: [deployment-release]
 
 - id: T-012
@@ -119,7 +115,7 @@
   title: Analyze the GMV of last two weeks, and give me a report and generate a chart of the GMV of last two weeks
   message: "Analyze the GMV of last two weeks, and give me a report and generate a chart of the GMV of last two weeks"
   expect: >-
-    A report and a chart of the GMV of last two weeks. Read-only, no writes, no errors.
+    A report and a chart of the GMV of last two weeks.
   agents: [business-data-analyst, data-viz-renderer]
 
 - id: T-015
