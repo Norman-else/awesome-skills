@@ -63,12 +63,28 @@ def main() -> int:
         else:
             errors.append(f"{where}: {err.message}")
 
-    # 2. Cross-scenario checks the schema can't express: duplicate ids.
+    # 2. Cross-scenario checks the schema can't express: duplicate ids, and
+    #    in_thread_of must point at a scenario defined EARLIER in the file
+    #    (you can only thread under a message that has already been sent — this
+    #    also makes dependency cycles impossible by construction).
     if isinstance(data, list):
         seen = {}
         for i, item in enumerate(data):
-            if isinstance(item, dict) and "id" in item:
-                sid = item["id"]
+            if not isinstance(item, dict):
+                continue
+            sid = item.get("id")
+            ref = item.get("in_thread_of")
+            # Check the reference against ids seen ABOVE this point (before
+            # recording the current id, so a self-reference can't satisfy it).
+            if ref is not None:
+                if ref == sid:
+                    errors.append(f"[{i}] {sid}: in_thread_of references itself")
+                elif ref not in seen:
+                    errors.append(
+                        f"[{i}] {sid}: in_thread_of {ref!r} must reference a scenario "
+                        f"defined earlier in the file (no such id above)"
+                    )
+            if "id" in item:
                 if sid in seen:
                     errors.append(f"[{i}]: duplicate id {sid!r} (also at index {seen[sid]})")
                 else:

@@ -19,6 +19,13 @@
 #                        is the behavior under test and the agent set is small/stable.
 #   note     (optional)  sandbox scope, cleanup, a special terminal state, or an
 #                        "agent unconfirmed — lock on first run" caveat.
+#   in_thread_of (optional)  another scenario id (T-0XX) defined EARLIER in this
+#                        file. Sends this scenario as a reply INSIDE that
+#                        scenario's Slack thread instead of a fresh top-level
+#                        message — for multi-turn / context-continuation tests
+#                        (the follow-up relies on the thread's prior context).
+#                        The referenced scenario is auto-included as a
+#                        prerequisite when you run a subset.
 
 - id: T-001
   title: capability ping
@@ -49,29 +56,37 @@
   agents: [default]
 
 - id: T-005
-  title: assign a ticket to me
-  message: "Assign the ticket with the title 'Navi - Test ticket' to me"
+  title: assign the just-created ticket to me
+  in_thread_of: T-004
+  message: "Assign it to me"
   expect: >-
-    A confirmation that the ticket was assigned to me.
+    A confirmation that the ticket from this thread was assigned to me. Navi
+    should resolve "it" from the thread context (the 'Navi - Test ticket' that
+    T-004 just created) rather than asking which ticket.
   agents: [none]
 
 - id: T-006
-  title: assign a ticket to a team
-  message: "Assign the ticket with the title 'Navi - Test ticket' to the Polaris team"
+  title: assign the ticket to the Polaris team
+  in_thread_of: T-004
+  message: "Now also assign it to the Polaris team"
   expect: >-
-    A confirmation that the ticket was assigned to the Polaris team.
+    A confirmation that the same ticket from this thread was assigned to the
+    Polaris team. Navi should resolve "it" from the thread context, not ask which
+    ticket.
   agents: [none]
 
 - id: T-007
-  title: assign a ticket to sprint
-  message: "Assign the ticket with the title 'Navi - Test ticket' to the current sprint of Polaris team"
+  title: add the ticket to the current sprint
+  in_thread_of: T-004
+  message: "And add it to that team's current sprint"
   expect: >-
-    A confirmation that the ticket was assigned to the current sprint.
+    A confirmation that the same ticket was added to the Polaris team's current
+    sprint. Navi resolves "it" and "that team" (Polaris) from the thread context.
   agents: [none]
 
 - id: T-008
-  title: Show me the tickets in current sprint of Polaris team
-  message: "Show me the tickets with the title 'Navi - Test ticket' in current sprint of Polaris team"
+  title: Show me all tickets in current sprint of Polaris team
+  message: "Show me all tickets in current sprint of Polaris team"
   expect: >-
     A list of tickets in the current sprint of Polaris team.
   agents: [none]
@@ -105,10 +120,12 @@
   agents: [none]
 
 - id: T-013
-  title: transition a ticket to a new status
-  message: "Transition the ticket with the title 'Navi - Test ticket' to the 'In Progress' status"
+  title: transition the ticket to In Progress
+  in_thread_of: T-004
+  message: "Move it to In Progress"
   expect: >-
-    A confirmation that the ticket was transitioned to the 'In Progress' status.
+    A confirmation that the ticket from this thread was transitioned to the
+    'In Progress' status. Navi resolves "it" from the thread context.
   agents: [none]
 
 - id: T-014

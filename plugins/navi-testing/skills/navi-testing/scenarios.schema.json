@@ -48,7 +48,12 @@
           "items": { "type": "string", "minLength": 1 },
           "description": "Agent type name(s); not enum-checked, any string allowed. [none] asserts no delegation and must be the only element."
         },
-        "note": { "type": "string", "minLength": 1 }
+        "note": { "type": "string", "minLength": 1 },
+        "in_thread_of": {
+          "type": "string",
+          "pattern": "^T-[0-9]{3}$",
+          "description": "Optional. Run this scenario as a threaded reply under the message sent for the referenced scenario id (same Slack thread) instead of a fresh top-level message — for multi-turn / context-continuation tests. The referenced id MUST be defined EARLIER in this file (a scenario can only thread under one that already ran). Cross-checked by validate_scenarios.py."
+        }
       },
       "allOf": [
         {

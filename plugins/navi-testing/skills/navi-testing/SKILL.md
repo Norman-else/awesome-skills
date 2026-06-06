@@ -45,8 +45,19 @@ If a prerequisite is missing, say exactly which one and stop — do not fake a p
   problems and stop. If Python/deps are unavailable, validate `scenarios.yaml`
   against `scenarios.schema.json` yourself before proceeding.
 - Read **`scenarios.yaml`** for the scenarios (each: `id`, `title`, `message`,
-  `expect`, optional `agents` list, optional `note`). If the user named specific
-  scenarios in their prompt, run only those; otherwise run all.
+  `expect`, optional `agents` list, optional `note`, optional `in_thread_of`). If
+  the user named specific scenarios in their prompt, run only those; otherwise run
+  all.
+- **`in_thread_of` (thread dependency).** A scenario with `in_thread_of: T-0XX`
+  is **not** sent as a fresh top-level message — it is posted as a reply **inside
+  the Slack thread of the referenced scenario**, to test multi-turn / context
+  continuation (e.g. T-004 creates a ticket, then T-005 `in_thread_of: T-004`
+  says "assign it to me" relying on the thread's context). The reference always
+  points at a scenario defined **earlier** in the file (validated). When you run a
+  **subset**, a threaded scenario needs its `in_thread_of` ancestor to have run
+  first **in the same session** — auto-include the ancestor chain and run it
+  top-to-bottom so the parent thread exists; if an ancestor cannot be run, report
+  that and skip the dependent rather than silently posting it top-level.
 
 ## Workflow
 
@@ -54,14 +65,27 @@ Run scenarios **sequentially** (one at a time) so threads and traces don't
 interleave. For each scenario:
 
 ### 1. Send
-- Post as a **fresh top-level message** in the channel (NOT a reply into an
-  existing thread) so it gets its own unique ts:
-  `<@NAVI_USER_ID> {scenario.message}  [navi-test {run_nonce}]`
-  where `run_nonce` is a short unique token per scenario (e.g. uuid8).
-- Record the posted message's **ts** (from the Slack post response) and the
-  **send time**. The ts is the correlation key: for a top-level message Navi
-  sets `thread_ts = event.ts`, so `agent_traces.thread_ts` will equal this ts
-  exactly and uniquely. The nonce is a human-traceable, last-resort confirm.
+- Build the text as `<@NAVI_USER_ID> {scenario.message}  [navi-test {run_nonce}]`
+  where `run_nonce` is a short unique token **per scenario** (e.g. uuid8). The
+  nonce is what correlates this exact message to its trace — keep it unique even
+  for threaded scenarios.
+- **Default (no `in_thread_of`):** post as a **fresh top-level message** (NOT a
+  reply into an existing thread) so it gets its own unique ts.
+- **Threaded (`in_thread_of: T-0XX`):** post as a **reply into the referenced
+  scenario's thread** — `slack_send_message` with `thread_ts =` the **thread-root
+  ts you recorded** for `T-0XX` (see below). This makes Navi handle it as a
+  follow-up turn with the thread's prior context.
+- Record, per scenario id, the posted message's own **ts**, the **send time**,
+  and the **thread-root ts** to thread future replies under:
+  - top-level scenario → thread-root ts = its own posted ts (Navi sets
+    `thread_ts = event.ts`, so `agent_traces.thread_ts` equals it exactly).
+  - threaded scenario → thread-root ts = **inherited** from its `in_thread_of`
+    ancestor (Slack flattens nested replies into one thread:
+    `thread_ts = event.thread_ts = root`). So a later scenario may thread off
+    this one and still land in the same root thread.
+- ⚠️ For a threaded scenario, `agent_traces.thread_ts` is the **shared root ts**,
+  NOT this message's own ts — so it is NOT a unique key. Correlate threaded
+  scenarios by the **nonce** instead (step 3).
 
 ### 2. Wait for completion
 - Poll every few seconds: read the **reactions** on the sent message and the
@@ -85,16 +109,22 @@ interleave. For each scenario:
   within {timeout}s; last 👀 still present").
 
 ### 3. Collect the three layers
-- **Reaction**: the terminal emoji (or none).
-- **Reply**: Navi's thread reply text (the bot user's messages in the thread).
+- **Reaction**: read reactions on **this scenario's own posted ts** (Navi reacts
+  on the exact message it received, so this is correct even inside a shared
+  thread). Take the terminal emoji (or none).
+- **Reply**: Navi's reply text in the thread. For a **threaded** scenario the
+  thread is shared with the ancestor, so attribute the reply to THIS turn: take
+  the bot user's message(s) in the thread with `ts > {this scenario's posted ts}`
+  (posted after your send). Sequential execution guarantees no other test is
+  interleaving.
 - **Trace** (the important one): query the **dev** DB. First select the dev
-  environment, then correlate by the sent message ts:
+  environment, then correlate — **the key differs for top-level vs threaded**:
   - `mcp__mac-postgresql__list_environments` / `switch_environment` → dev (see
     `config.md` for the exact env name).
-  - Find the **root** trace for this exact message. The thread_ts equals the
-    sent ts (confirmed: Navi sets `thread_ts = event.ts` for a top-level msg).
-    Poll this query until a row appears AND its `status` is terminal (the trace
-    is written asynchronously while Navi runs), up to the configured timeout:
+  - **Top-level scenario** — correlate by the sent ts (`thread_ts == sent ts`,
+    exact and unique). Poll until a row appears AND its `status` is terminal (the
+    trace is written asynchronously while Navi runs), up to the configured
+    timeout:
     ```sql
     SELECT trace_id, status, round_count, duration_ms, error_message,
            agent_type, started_at
@@ -105,14 +135,27 @@ interleave. For each scenario:
     ORDER BY started_at DESC
     LIMIT 1;
     ```
-    Correlation reliability rests on four things, strongest first: (1) thread_ts
-    == sent ts is exact and unique per top-level post; (2) `trace_role='root'`
-    isolates the top-level trace from its sub-agent children; (3) the
-    `started_at` guard rejects stale traces; (4) scenarios run sequentially, so
-    only one test is ever in flight. Fallback if thread_ts somehow doesn't match:
-    newest root trace with `started_at >= {send_time}` AND
-    `source = 'slack_message'` AND `user_email = {test sender}`, then confirm the
-    `[navi-test {run_nonce}]` marker against the trace's request context.
+  - **Threaded scenario (`in_thread_of`)** — `thread_ts` is the **shared root ts**
+    (`event.thread_ts`), so it can't distinguish this turn from its ancestor/
+    siblings. Correlate by the **nonce**, which Navi stores verbatim in
+    `metadata_json->>'user_request'` (the user's message text, nonce included):
+    ```sql
+    SELECT trace_id, status, round_count, duration_ms, error_message,
+           agent_type, started_at
+    FROM agent_traces
+    WHERE trace_role = 'root'
+      AND started_at >= '{send_time}'            -- freshness guard
+      AND metadata_json->>'user_request' LIKE '%[navi-test {run_nonce}]%'
+    ORDER BY started_at DESC
+    LIMIT 1;
+    ```
+  - Reliability rests on, strongest first: (1) the nonce is unique per scenario
+    message and embedded in `user_request`, so it pins the exact run even in a
+    shared thread; for top-level, thread_ts == sent ts is an equally exact key;
+    (2) `trace_role='root'` isolates the top-level trace from its sub-agent
+    children; (3) the `started_at` guard rejects stale traces; (4) scenarios run
+    sequentially, so only one test is ever in flight. The nonce query is also the
+    universal **fallback** if the top-level thread_ts somehow doesn't match.
     Child/sub-agent traces for this run link via `parent_trace_id = {trace_id}`
     or `agent_trace_delegations.child_trace_id`.
   - Pull the flow detail for the chosen `trace_id`:
