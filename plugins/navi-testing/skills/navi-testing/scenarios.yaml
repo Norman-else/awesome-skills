@@ -7,7 +7,8 @@
 # Fields:
 #   id       (required)  T-<NNN>, unique, sequential from T-001 (pattern ^T-[0-9]{3}$)
 #   title    (required)  short human label
-#   message  (required)  exact text to send; the skill prepends @Navi + a nonce
+#   message  (required)  exact text to send; the skill prepends only @Navi (no
+#                        test marker — the message ts is the trace correlation key)
 #   expect   (required)  plain language: what a correct reply conveys + what Navi
 #                        should / must NOT do. Do NOT hand-write exact tool names
 #                        or status strings — they drift; let the judge map intent.
@@ -175,8 +176,10 @@
   agents: [diagnostics-explorer]
 
 - id: T-020
-  title: Analyze the latest session reply
-  message: "Analyze the latest session reply"
+  title: analyze the latest RUM session replay
+  message: "Analyze the latest RUM session replay"
   expect: >-
-    A report of the latest session reply.
+    An analysis of the most recent RUM Session Replay (a recorded user web
+    session) — not a chat/agent "reply". Routes to diagnostics-explorer's RUM
+    capability.
   agents: [diagnostics-explorer]

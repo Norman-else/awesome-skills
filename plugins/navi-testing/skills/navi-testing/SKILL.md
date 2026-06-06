@@ -65,18 +65,21 @@ Run scenarios **sequentially** (one at a time) so threads and traces don't
 interleave. For each scenario:
 
 ### 1. Send
-- Build the text as `<@NAVI_USER_ID> {scenario.message}  [navi-test {run_nonce}]`
-  where `run_nonce` is a short unique token **per scenario** (e.g. uuid8). The
-  nonce is what correlates this exact message to its trace — keep it unique even
-  for threaded scenarios.
+- The message text is just `<@NAVI_USER_ID> {scenario.message}` — **append no
+  test marker**. Every Slack message already gets a unique `ts`, and that ts (not
+  an in-message tag) is the correlation key. A `[navi-test …]`-style marker would
+  leak into Navi's request text and mislead it — Navi reasons over the whole
+  message (it only strips the @mention), so for vague asks it treats the tag as
+  the thing to act on. Keep the message clean.
 - **Default (no `in_thread_of`):** post as a **fresh top-level message** (NOT a
   reply into an existing thread) so it gets its own unique ts.
 - **Threaded (`in_thread_of: T-0XX`):** post as a **reply into the referenced
   scenario's thread** — `slack_send_message` with `thread_ts =` the **thread-root
   ts you recorded** for `T-0XX` (see below). This makes Navi handle it as a
   follow-up turn with the thread's prior context.
-- Record, per scenario id, the posted message's own **ts**, the **send time**,
-  and the **thread-root ts** to thread future replies under:
+- Record, per scenario id, the posted message's own **ts** and the **send time**
+  (both load-bearing for correlation), plus the **thread-root ts** to thread
+  future replies under:
   - top-level scenario → thread-root ts = its own posted ts (Navi sets
     `thread_ts = event.ts`, so `agent_traces.thread_ts` equals it exactly).
   - threaded scenario → thread-root ts = **inherited** from its `in_thread_of`
@@ -84,8 +87,9 @@ interleave. For each scenario:
     `thread_ts = event.thread_ts = root`). So a later scenario may thread off
     this one and still land in the same root thread.
 - ⚠️ For a threaded scenario, `agent_traces.thread_ts` is the **shared root ts**,
-  NOT this message's own ts — so it is NOT a unique key. Correlate threaded
-  scenarios by the **nonce** instead (step 3).
+  NOT this message's own ts — so it is NOT a unique key on its own. Correlate
+  threaded scenarios by `thread_ts(root) + started_at ≥ send_time` under strictly
+  sequential execution (step 3).
 
 ### 2. Wait for completion
 - Poll every few seconds: read the **reactions** on the sent message and the
@@ -136,28 +140,35 @@ interleave. For each scenario:
     LIMIT 1;
     ```
   - **Threaded scenario (`in_thread_of`)** — `thread_ts` is the **shared root ts**
-    (`event.thread_ts`), so it can't distinguish this turn from its ancestor/
-    siblings. Correlate by the **nonce**, which Navi stores verbatim in
-    `metadata_json->>'user_request'` (the user's message text, nonce included):
+    (`event.thread_ts`), so it matches the ancestor and every sibling turn in the
+    thread. Disambiguate by **freshness**: this turn's trace is the newest root
+    trace under the shared thread whose `started_at` is at/after when you posted
+    it. Because scenarios run strictly sequentially (each waits for its terminal
+    reaction before the next is sent), the ancestor's trace started well before
+    this `send_time` and later siblings aren't sent yet — so exactly one row
+    qualifies:
     ```sql
     SELECT trace_id, status, round_count, duration_ms, error_message,
            agent_type, started_at
     FROM agent_traces
-    WHERE trace_role = 'root'
-      AND started_at >= '{send_time}'            -- freshness guard
-      AND metadata_json->>'user_request' LIKE '%[navi-test {run_nonce}]%'
+    WHERE thread_ts = '{thread_root_ts}'
+      AND trace_role = 'root'
+      AND started_at >= '{send_time}'   -- excludes the ancestor + earlier turns
     ORDER BY started_at DESC
     LIMIT 1;
     ```
-  - Reliability rests on, strongest first: (1) the nonce is unique per scenario
-    message and embedded in `user_request`, so it pins the exact run even in a
-    shared thread; for top-level, thread_ts == sent ts is an equally exact key;
-    (2) `trace_role='root'` isolates the top-level trace from its sub-agent
-    children; (3) the `started_at` guard rejects stale traces; (4) scenarios run
-    sequentially, so only one test is ever in flight. The nonce query is also the
-    universal **fallback** if the top-level thread_ts somehow doesn't match.
-    Child/sub-agent traces for this run link via `parent_trace_id = {trace_id}`
-    or `agent_trace_delegations.child_trace_id`.
+    If Navi's clock can lag the Slack post, allow a small skew buffer
+    (`send_time - 5s`); the ancestor is tens of seconds older, so the buffer stays
+    safe.
+  - Reliability rests on, strongest first: (1) for top-level, `thread_ts == sent
+    ts` is exact and globally unique; (2) for threaded, `thread_ts(root) +
+    started_at ≥ send_time` under strictly sequential execution leaves exactly one
+    candidate; (3) `trace_role='root'` isolates the top-level trace from its
+    sub-agent children; (4) only one test is ever in flight. Fallback if a
+    top-level `thread_ts` somehow doesn't match: newest root trace with
+    `started_at >= {send_time}` AND `source = 'slack_message'` AND `user_email =
+    {test sender}`. Child/sub-agent traces for this run link via
+    `parent_trace_id = {trace_id}` or `agent_trace_delegations.child_trace_id`.
   - Pull the flow detail for the chosen `trace_id`:
     ```sql
     -- tool calls (names, status, errors)
@@ -223,9 +234,8 @@ message to the **report channel id** from `config.md` (defaults to the test
 channel). This runs on every completed run — pass or fail, one scenario or many.
 
 - Post as a **fresh top-level message** (do not reply into any scenario thread).
-- The report message must **NOT** `@mention` Navi and must **NOT** contain the
-  `[navi-test {nonce}]` marker — either would trigger a new Navi run or pollute
-  trace correlation. Refer to Navi by plain name only.
+- The report message must **NOT** `@mention` Navi (it would trigger a new Navi
+  run). Refer to Navi by plain name only.
 - Use the **Slack report format** below (a compact variant of the terminal
   report — Slack markdown, trimmed replies). Keep it under Slack's size limit;
   if there are many failures, include full detail for failures and collapse
