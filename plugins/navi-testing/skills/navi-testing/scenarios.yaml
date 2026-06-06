@@ -150,24 +150,28 @@
   agents: [infra-release-executor]
 
 - id: T-017
-  title: Analyze the CPU usage and memory usage of the Navi service in the last 24 hours
-  message: "Analyze the CPU usage and memory usage of the Navi service in the last 24 hours"
+  title: analyze Navi cpu/mem in dev (last 24h)
+  message: "Analyze the CPU and memory usage of the Navi service in dev over the last 24 hours"
   expect: >-
-    A report of the CPU usage and memory usage of the Navi service in the last 24 hours.
+    A report of the Navi service's CPU and memory usage in dev over the last 24
+    hours. Navi runs only in dev, so naming the env lets diagnostics-explorer
+    scope and report without asking which environment.
   agents: [diagnostics-explorer]
 
 - id: T-018
-  title: Is there any issue with the Navi service in the last 24 hours?
-  message: "Is there any issue with the Navi service in the last 24 hours?"
+  title: any issues with the Navi service in dev (last 24h)
+  message: "Are there any issues with the Navi service in dev in the last 24 hours?"
   expect: >-
-    A report of the issues with the Navi service in the last 24 hours.
+    A report of any issues (or a clean bill of health) for the Navi service in
+    dev over the last 24 hours.
   agents: [diagnostics-explorer]
 
 - id: T-019
-  title: Analyze the jvm metrics of ims service in the last 24 hours
-  message: "Analyze the jvm metrics of ims service in the last 24 hours"
+  title: analyze IMS jvm metrics in prod (last 24h)
+  message: "Analyze the jvm metrics of the ims service in prod over the last 24 hours"
   expect: >-
-    A report of the jvm metrics of ims service in the last 24 hours.
+    A report of the ims service's jvm metrics in prod over the last 24 hours
+    (scoped to one environment, not blended across envs).
   agents: [diagnostics-explorer]
 
 - id: T-020
