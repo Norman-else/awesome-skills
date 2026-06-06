@@ -1,0 +1,36 @@
+{
+  "name": "vpn-skills",
+  "version": "0.1.0",
+  "description": "VPN maintenance workflows for rotating Lightsail-backed Xboard node IPs, verifying recovery, and notifying Slack.",
+  "author": {
+    "name": "Norman",
+    "url": "https://github.com/Norman-else"
+  },
+  "homepage": "https://github.com/Norman-else/awesome-skills",
+  "repository": "https://github.com/Norman-else/awesome-skills",
+  "license": "MIT",
+  "keywords": [
+    "vpn",
+    "xboard",
+    "lightsail",
+    "slack",
+    "codex",
+    "claude-code"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "VPN Skills",
+    "shortDescription": "Maintain Lightsail-backed Xboard VPN nodes.",
+    "longDescription": "Rotates public IPs for Lightsail-backed Xboard VPN nodes, updates the matching Xboard node address, verifies the node is online, and posts a Slack recovery notice.",
+    "developerName": "Norman",
+    "category": "Productivity",
+    "capabilities": [
+      "Skills"
+    ],
+    "websiteURL": "https://github.com/Norman-else/awesome-skills",
+    "defaultPrompt": [
+      "Use $maintain-xboard-node to rotate a Lightsail-backed Xboard VPN node and notify Slack after recovery."
+    ],
+    "brandColor": "#2563EB"
+  }
+}

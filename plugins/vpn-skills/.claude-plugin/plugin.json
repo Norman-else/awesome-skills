@@ -1,0 +1,10 @@
+{
+  "name": "vpn-skills",
+  "description": "VPN maintenance workflows for rotating Lightsail-backed Xboard node IPs, verifying recovery, and notifying Slack.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Norman",
+    "url": "https://github.com/Norman-else"
+  },
+  "homepage": "https://github.com/Norman-else/awesome-skills"
+}

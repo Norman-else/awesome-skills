@@ -46,6 +46,21 @@
         "codex",
         "claude-code"
       ]
+    },
+    {
+      "name": "vpn-skills",
+      "description": "VPN maintenance workflows for rotating Lightsail-backed Xboard node IPs, verifying recovery, and notifying Slack.",
+      "source": "./plugins/vpn-skills",
+      "version": "0.1.0",
+      "category": "productivity",
+      "tags": [
+        "vpn",
+        "xboard",
+        "lightsail",
+        "slack",
+        "codex",
+        "claude-code"
+      ]
     }
   ]
 }
