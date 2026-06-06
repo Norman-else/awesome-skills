@@ -131,3 +131,31 @@
   expect: >-
     A confirmation that the release was created directly without a plan.
   agents: [infra-release-executor]
+
+- id: T-017
+  title: Analyze the CPU usage and memory usage of the Navi service in the last 24 hours
+  message: "Analyze the CPU usage and memory usage of the Navi service in the last 24 hours"
+  expect: >-
+    A report of the CPU usage and memory usage of the Navi service in the last 24 hours.
+  agents: [diagnostics-explorer]
+
+- id: T-018
+  title: Is there any issue with the Navi service in the last 24 hours?
+  message: "Is there any issue with the Navi service in the last 24 hours?"
+  expect: >-
+    A report of the issues with the Navi service in the last 24 hours.
+  agents: [diagnostics-explorer]
+
+- id: T-019
+  title: Analyze the jvm metrics of ims service in the last 24 hours
+  message: "Analyze the jvm metrics of ims service in the last 24 hours"
+  expect: >-
+    A report of the jvm metrics of ims service in the last 24 hours.
+  agents: [diagnostics-explorer]
+
+- id: T-020
+  title: Analyze the latest session reply
+  message: "Analyze the latest session reply"
+  expect: >-
+    A report of the latest session reply.
+  agents: [diagnostics-explorer]
