@@ -1,7 +1,9 @@
 # navi-testing scenarios
 #
-# One list entry per scenario. The skill runs them top to bottom and judges each
-# on three layers (reaction + reply + dev trace). Validate before running:
+# One list entry per scenario. The skill runs independent scenarios in parallel
+# (up to the Max concurrency in config.md) and runs turns that share a thread
+# (in_thread_of chains) sequentially in file order, judging each on three layers
+# (reaction + reply + dev trace). Validate before running:
 #     python3 validate_scenarios.py
 #
 # Fields:

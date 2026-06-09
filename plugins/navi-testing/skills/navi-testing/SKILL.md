@@ -37,7 +37,9 @@ If a prerequisite is missing, say exactly which one and stop — do not fake a p
 ## Inputs
 
 - Read **`config.md`** for the channel id, Navi identity, dev DB env, timeout,
-  and the **report channel id** (where step 6 posts the run report).
+  **max concurrency** (how many independent scenarios may run in parallel — see
+  the Concurrency model below), and the **report channel id** (where step 6 posts
+  the run report).
 - **Validate `scenarios.yaml` first.** From the skill folder run
   `python3 validate_scenarios.py` (needs PyYAML + jsonschema). It checks required
   fields, id format, duplicate ids, and that every `agents` name is a known agent
@@ -61,8 +63,45 @@ If a prerequisite is missing, say exactly which one and stop — do not fake a p
 
 ## Workflow
 
-Run scenarios **sequentially** (one at a time) so threads and traces don't
-interleave. For each scenario:
+### Concurrency model
+
+Independent scenarios run **in parallel**; turns that share a Slack thread run
+**sequentially**. Work out the schedule before sending anything:
+
+1. **Group scenarios into thread-families.** A *family* is a top-level scenario
+   plus every scenario that threads onto it (transitively via `in_thread_of`). In
+   the bundled scenarios, T-004 with its replies T-005/T-006/T-007/T-013 is one
+   family; every other scenario is a family of one.
+2. **Within a family: strictly sequential**, in file (id) order — send a turn
+   only after the previous turn in that family has reached a terminal reaction.
+   The whole family shares one root `thread_ts`, so its turns must never
+   interleave; this is exactly what the trace/reply correlation in steps 2–3
+   relies on.
+3. **Across families: parallel**, up to **Max concurrency** families in flight at
+   once (read it from `config.md`). Each family has a distinct root `thread_ts`,
+   so their reactions, replies, and traces never collide. Run a worklist: keep up
+   to N families active; whenever one finishes, start the next pending family.
+   Setting Max concurrency to `1` collapses this back to the old one-at-a-time
+   behavior.
+
+**The cap counts families, not turns.** A family occupies one concurrency slot
+for its *entire* sequential life — from its first turn's send until its last turn
+reaches terminal — and only one of its turns is ever in flight at a time. The slot
+frees only when the family completes; you then pull the next pending family into
+it. So a family's root turn (e.g. T-004) runs concurrently with *other* families,
+but **never** with its own later turns (T-005…). At any moment up to N turns are
+in flight, at most one per thread.
+
+Concretely, you (the agent) are the scheduler: start min(N, #families) families;
+each poll cycle, batch-read the in-flight turns (reactions/replies + the trace
+queries can go out together); for every turn that hit terminal and has its three
+layers, either send that family's next turn (same slot) or, if the family is done,
+free the slot and start the next pending family. Repeat until every family is done.
+
+Run the per-turn steps (1 Send → 2 Wait → 3 Collect) for each turn as the schedule
+dispatches it; you may **judge** (step 4) a scenario as soon as its three layers
+are in. Do the cleanup (step 5) and post the run report (step 6) only **after all
+families have finished**. For each turn:
 
 ### 1. Send
 - The message text is just `<@NAVI_USER_ID> {scenario.message}` — **append no
@@ -119,8 +158,9 @@ interleave. For each scenario:
 - **Reply**: Navi's reply text in the thread. For a **threaded** scenario the
   thread is shared with the ancestor, so attribute the reply to THIS turn: take
   the bot user's message(s) in the thread with `ts > {this scenario's posted ts}`
-  (posted after your send). Sequential execution guarantees no other test is
-  interleaving.
+  (posted after your send). Sequential execution **within the family** guarantees
+  no other turn in this thread is interleaving; concurrent families post into
+  different threads, so they never land here.
 - **Trace** (the important one): query the **dev** DB. First select the dev
   environment, then correlate — **the key differs for top-level vs threaded**:
   - `mcp__mac-postgresql__list_environments` / `switch_environment` → dev (see
@@ -143,10 +183,11 @@ interleave. For each scenario:
     (`event.thread_ts`), so it matches the ancestor and every sibling turn in the
     thread. Disambiguate by **freshness**: this turn's trace is the newest root
     trace under the shared thread whose `started_at` is at/after when you posted
-    it. Because scenarios run strictly sequentially (each waits for its terminal
-    reaction before the next is sent), the ancestor's trace started well before
-    this `send_time` and later siblings aren't sent yet — so exactly one row
-    qualifies:
+    it. Because turns **within a family** run strictly sequentially (each waits
+    for its terminal reaction before the next turn in the same thread is sent) and
+    other families use a different `thread_ts`, the ancestor's trace started well
+    before this `send_time` and later siblings in this thread aren't sent yet — so
+    exactly one row qualifies:
     ```sql
     SELECT trace_id, status, round_count, duration_ms, error_message,
            agent_type, started_at
@@ -161,14 +202,21 @@ interleave. For each scenario:
     (`send_time - 5s`); the ancestor is tens of seconds older, so the buffer stays
     safe.
   - Reliability rests on, strongest first: (1) for top-level, `thread_ts == sent
-    ts` is exact and globally unique; (2) for threaded, `thread_ts(root) +
-    started_at ≥ send_time` under strictly sequential execution leaves exactly one
-    candidate; (3) `trace_role='root'` isolates the top-level trace from its
-    sub-agent children; (4) only one test is ever in flight. Fallback if a
+    ts` is exact and globally unique — concurrency-safe, which is exactly why
+    independent (top-level) families can run in parallel; (2) for threaded,
+    `thread_ts(root) + started_at ≥ send_time` under sequential execution **within
+    the family** leaves exactly one candidate (concurrent families have a
+    different `thread_ts`, so they never enter this WHERE clause); (3)
+    `trace_role='root'` isolates the top-level trace from its sub-agent children;
+    (4) within any one thread only one turn is ever in flight. Fallback if a
     top-level `thread_ts` somehow doesn't match: newest root trace with
     `started_at >= {send_time}` AND `source = 'slack_message'` AND `user_email =
-    {test sender}`. Child/sub-agent traces for this run link via
-    `parent_trace_id = {trace_id}` or `agent_trace_delegations.child_trace_id`.
+    {test sender}`. ⚠️ This freshness-only fallback is **NOT concurrency-safe** —
+    while other families are in flight, several runs from the same sender qualify.
+    Only use it after the other in-flight turns have quiesced, or temporarily drop
+    Max concurrency to 1 and retry that one scenario. Child/sub-agent traces for
+    this run link via `parent_trace_id = {trace_id}` or
+    `agent_trace_delegations.child_trace_id`.
   - Pull the flow detail for the chosen `trace_id`:
     ```sql
     -- tool calls (names, status, errors)

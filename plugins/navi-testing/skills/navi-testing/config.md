@@ -31,6 +31,11 @@ Fill these in for your environment. The skill reads this file at the start of a 
 
 - **Per-scenario timeout**: `180` seconds (raise for heavy scenarios).
 - **Poll interval**: `5` seconds.
+- **Max concurrency**: `4`  <!-- how many independent thread-families may be in
+     flight at once. Independent scenarios run in parallel up to this cap; turns
+     that share one Slack thread (`in_thread_of` chains) always run sequentially
+     regardless of this value. Set to `1` to force the old strictly one-at-a-time
+     behavior. Keep it modest so Navi/Slack aren't flooded. -->
 - **Sandbox**: scenarios must stay within the test sandbox (test Jira project /
   repo / env). Note the sandbox identifiers here so scenarios can reference them:
   - Sandbox Jira project: `<FILL ME>`
