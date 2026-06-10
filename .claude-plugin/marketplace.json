@@ -11,7 +11,7 @@
       "name": "awesome-skills",
       "description": "Shared skill pack for Codex and Claude Code.",
       "source": "./plugins/awesome-skills",
-      "version": "0.1.12",
+      "version": "0.1.13",
       "category": "productivity",
       "tags": [
         "skills",
@@ -66,7 +66,7 @@
       "name": "navi-recap",
       "description": "Turn git commit history into a product-evolution story and a polished single-file HTML slide deck. Mines commits across sibling repos, verifies flows in code before drawing them, narrates for non-engineers, then builds and visually verifies the deck. Install separately.",
       "source": "./plugins/navi-recap",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "category": "productivity",
       "tags": [
         "navi",

@@ -1,6 +1,6 @@
 ---
 name: navi-recap
-description: Use when the user asks to turn git commit history into a product-evolution story or presentation — e.g. "梳理过去一个月的产品变化", "monthly recap", "做个 PPT/汇报 share 给别人", "what shipped last month", "navi-recap". Defaults to the Navi + engineering-agent-registry repos but works for any repo and time window.
+description: Use when the user asks to turn git commit history into a product-evolution story or presentation (in any language) — e.g. "summarize last month's product changes from git history", "monthly recap", "make a PPT/slide deck of what shipped to share", "navi-recap". Defaults to the Navi + engineering-agent-registry repos but works for any repo and time window.
 ---
 
 # Navi Recap — git history → product story → slide deck
@@ -27,7 +27,7 @@ Two iron rules:
 |---|---|
 | Repos | `~/Infras/Navi` **and** `~/Infras/engineering-agent-registry` |
 | Window | past month (`--since`) |
-| Audience | non-engineers, Chinese, prefers 人话 + analogies |
+| Audience | non-engineers; plain language + analogies; write in the user's language |
 | Stop point | ask: Markdown story only, or full HTML deck |
 
 ## Phase 1 — Mine
@@ -60,8 +60,25 @@ where reality differs from your draft description, and keep the corrections.
 ## Phase 4 — Build the deck (if requested)
 
 Read `references/deck-design.md` first; start from
-`examples/slide-skeleton.html`. Single-file HTML, zero build steps. Save the
-deck next to the analyzed repo (not in /tmp) with a dated filename.
+`examples/slide-skeleton.html`. Single-file HTML, zero build steps.
+
+**Output location (fixed convention):** save the deck under the main repo's
+root in a `monthly_product/` directory — create it if it doesn't exist:
+
+```bash
+mkdir -p <main-repo-root>/monthly_product
+```
+
+**Filename:** `Navi-Product_<date-range>.html`, where the date range is the
+analysis window as `YYYY.MM.DD-YYYY.MM.DD`. Example:
+
+```
+~/Infras/Navi/monthly_product/Navi-Product_2026.05.10-2026.06.10.html
+```
+
+For a non-Navi repo, substitute the product name: `<Product>-Product_<date-range>.html`.
+Never leave the final deck in `/tmp` (temp verification copies only — see
+Phase 5).
 
 ## Phase 5 — Verify rendering
 
