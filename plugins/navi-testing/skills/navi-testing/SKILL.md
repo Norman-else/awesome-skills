@@ -110,6 +110,12 @@ families have finished**. For each turn:
   leak into Navi's request text and mislead it — Navi reasons over the whole
   message (it only strips the @mention), so for vague asks it treats the tag as
   the thing to act on. Keep the message clean.
+- **Pace the sends.** Navi has a per-user rate limiter: messages posted ~1s
+  apart can be rejected with a "You're sending messages too fast" thread reply —
+  no reaction, no trace, the turn never ran. Leave a few seconds between sends
+  (the family-concurrency cap alone does not guarantee spacing). A rate-limited
+  send is NOT a scenario result: retry it in a later free slot, and report the
+  limiter only as a run note (or as a finding if it recurs at human pacing).
 - **Default (no `in_thread_of`):** post as a **fresh top-level message** (NOT a
   reply into an existing thread) so it gets its own unique ts.
 - **Threaded (`in_thread_of: T-0XX`):** post as a **reply into the referenced
@@ -161,6 +167,17 @@ families have finished**. For each turn:
   (posted after your send). Sequential execution **within the family** guarantees
   no other turn in this thread is interleaving; concurrent families post into
   different threads, so they never land here.
+  - ⚠️ **Native-table blind spot.** Navi posts final replies through Slack's
+    streaming API (`chat.startStream` + `markdown_text`,
+    `slack/ai_surface.py`), so markdown tables render as **native table
+    blocks** in the real Slack client — but thread-reading tools
+    (`slack_read_thread`) return only the message's plain-text layer, where
+    those blocks are **invisible**. A reply that reads as a header followed by
+    an empty gap right where a table belongs almost always means "the table
+    rendered fine; your reader can't see it". (Bullet lines instead of a gap =
+    Navi's plain-text fallback path `_post_markdown_response`, which flattens
+    tables and IS readable.) Recover the actual table content from the trace's
+    `agent_trace_tool_calls.result_preview` rather than trusting the text read.
 - **Trace** (the important one): query the **dev** DB. First select the dev
   environment, then correlate — **the key differs for top-level vs threaded**:
   - `mcp__mac-postgresql__list_environments` / `switch_environment` → dev (see
@@ -246,7 +263,12 @@ names or status strings, so match against intent, not literal text:
 - **Reaction**: terminal success (`white_check_mark`) unless `expect`/`note` calls
   out a different terminal state (e.g. the safety gate's stop-for-approval).
 - **Reply**: consistent with what `expect` says the reply should convey
-  (approximate / semantic match — you are the judge).
+  (approximate / semantic match — you are the judge). Never FAIL a scenario
+  solely because table-shaped content seems missing from the reply read — that
+  is usually the native-table blind spot (step 3): the table is in the trace's
+  `result_preview` and renders fine in the real client. Judge the reply's table
+  content from the trace result; only fail the reply layer on evidence the user
+  actually saw wrong/missing content (e.g. a screenshot).
 - **Trace**: `agent_traces.status` is a clean terminal status with `error_message`
   null (unless the scenario expects otherwise); the behavior `expect` describes is
   borne out — the right kind of tools/delegations ran (follow delegations into
