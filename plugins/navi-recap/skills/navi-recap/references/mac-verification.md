@@ -25,14 +25,29 @@ overflow) when the deck picks its slide from `location.hash` at load time.
 
 1. `open /path/deck.html` (plain path — this survives) to confirm slide 1.
 2. Request computer-use access for the browser; screenshot; inspect.
-3. To check slide N, make a throwaway copy hard-coded to start there, e.g. if
-   the deck boots via `syncHash();`:
+3. To check slide N, make a throwaway copy hard-coded to start there AND to
+   close its own tab after 2 minutes, e.g. if the deck boots via `syncHash();`:
 
    ```bash
-   sed "s/syncHash();/go(N-1);/" deck.html > /tmp/check-N.html && open /tmp/check-N.html
+   sed "s/syncHash();/go(N-1);setTimeout(()=>window.close(),120000);/" deck.html \
+     > /tmp/check-N.html && open /tmp/check-N.html
    ```
 
-   (`go()` is 0-indexed; one temp file per slide checked.)
+   (`go()` is 0-indexed; one temp file per slide checked.) The `window.close()`
+   works because a tab opened by `open` has a one-entry history, which Chrome
+   allows scripts to close — verified empirically. This is the ONLY sanctioned
+   way to clean up verification tabs: you cannot click the ✕ at "read" tier,
+   and AppleScript is forbidden. Never inject the self-close into the real
+   deck — temp copies only.
+
+   Why copies instead of testing the final HTML directly: the real file always
+   opens on slide 1 (`open` strips `#N`/`?s=N`, and you cannot press → at
+   "read" tier), so reaching slide N requires changing the boot line — and
+   mutating the deliverable to navigate is how a stray `go(6)` or self-close
+   timer ends up in the deck someone presents. The real file is verified as-is
+   for slide 1; every other slide is checked on a disposable copy. (If a
+   Claude-in-Chrome MCP is connected, drive the real file directly instead —
+   it can navigate tabs, making temp copies unnecessary.)
 4. Screenshot ~1.5 s after opening. Verify one instance of each *distinct
    layout*, not every slide.
 5. Clean up: `rm /tmp/check-*.html`, and tell the user the real deck path
@@ -48,8 +63,11 @@ Verification is a loop, not a single pass:
    the "refresh": you cannot press ⌘R at read tier) → re-inspect.
 3. Loop until one full inspection pass finds nothing. Only then report done.
 
-Never close the browser or its tabs when finished — leave the deck on screen
-for the user. Temp per-slide copies (`/tmp/check-*.html`) still get deleted.
+Never close the browser or the real deck's tab when finished — leave the deck
+on screen for the user. Temp verification tabs clean themselves up via their
+injected `window.close()` timer; their files (`/tmp/check-*.html`) still get
+deleted with `rm`. If you regenerate a copy after a fix, the new tab gets a
+fresh timer; stale tabs from before the fix close on their own schedule.
 
 ## Reading screenshots correctly
 

@@ -1,6 +1,6 @@
 {
   "name": "navi-recap",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Turn git commit history into a product-evolution story and a polished single-file HTML slide deck: mine commits across sibling repos, verify flows in code before drawing them, narrate for non-engineers, then build and visually verify the deck.",
   "author": {
     "name": "Norman",

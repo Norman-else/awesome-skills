@@ -100,8 +100,10 @@ Then run this loop until the deck is visually clean:
 
 Only after a clean pass may you tell the user the deck is done — never declare
 completion on an unverified or known-broken deck. **Leave the browser open**
-with the deck showing; do not close the browser or its tabs — the user takes
-over from there.
+with the real deck showing — the user takes over from there. Temp verification
+copies carry an injected self-close timer so their tabs disappear on their own
+(see the reference doc); delete their files and never let the timer or a
+hard-coded start slide leak into the real deck.
 
 ## Common mistakes
 
