@@ -80,12 +80,28 @@ For a non-Navi repo, substitute the product name: `<Product>-Product_<date-range
 Never leave the final deck in `/tmp` (temp verification copies only — see
 Phase 5).
 
-## Phase 5 — Verify rendering
+## Phase 5 — Verify in the browser until clean (mandatory)
 
-Read `references/mac-verification.md` **before** trying to screenshot the deck.
+Building the file is not the end of the task. Read
+`references/mac-verification.md` **before** trying to screenshot the deck —
 macOS has silent traps (`open` strips `#fragment` and `?query` from file URLs;
 headless Chrome may be SIGKILLed; browsers are screenshot-only at "read" tier).
-Verify one instance of each distinct slide layout, not every slide.
+
+Then run this loop until the deck is visually clean:
+
+1. **Open** the deck in the system browser: `open <deck-path>` (plain path).
+2. **Inspect** via screenshots: layout, CJK font rendering, overflow/clipping,
+   contrast, animation end-state. Cover one instance of each distinct slide
+   layout, not every slide.
+3. **Found a problem?** Fix the HTML yourself, then **refresh by re-running
+   `open <deck-path>`** (you cannot click reload at "read" tier; re-opening
+   loads the updated file), and go back to step 2.
+4. **Repeat** until a full pass finds no issues.
+
+Only after a clean pass may you tell the user the deck is done — never declare
+completion on an unverified or known-broken deck. **Leave the browser open**
+with the deck showing; do not close the browser or its tabs — the user takes
+over from there.
 
 ## Common mistakes
 

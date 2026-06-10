@@ -38,6 +38,19 @@ overflow) when the deck picks its slide from `location.hash` at load time.
 5. Clean up: `rm /tmp/check-*.html`, and tell the user the real deck path
    explicitly so they don't present from a temp copy.
 
+## The verify–fix loop (exit criteria)
+
+Verification is a loop, not a single pass:
+
+1. `open <deck-path>` → screenshot → analyze.
+2. Issue found (overflow, broken layout, missing font, unreadable contrast) →
+   edit the HTML → `open <deck-path>` again to load the fixed version (this is
+   the "refresh": you cannot press ⌘R at read tier) → re-inspect.
+3. Loop until one full inspection pass finds nothing. Only then report done.
+
+Never close the browser or its tabs when finished — leave the deck on screen
+for the user. Temp per-slide copies (`/tmp/check-*.html`) still get deleted.
+
 ## Reading screenshots correctly
 
 - A blank or faint slide is usually the **entry animation's first frames** —
