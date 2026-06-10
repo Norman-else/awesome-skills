@@ -1,0 +1,37 @@
+{
+  "name": "navi-recap",
+  "version": "0.1.0",
+  "description": "Turn git commit history into a product-evolution story and a polished single-file HTML slide deck: mine commits across sibling repos, verify flows in code before drawing them, narrate for non-engineers, then build and visually verify the deck.",
+  "author": {
+    "name": "Norman",
+    "url": "https://github.com/Norman-else"
+  },
+  "homepage": "https://github.com/Norman-else/awesome-skills",
+  "repository": "https://github.com/Norman-else/awesome-skills",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "codex",
+    "claude-code",
+    "git",
+    "recap",
+    "slides",
+    "presentation"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Navi Recap",
+    "shortDescription": "Git history → product story → HTML slide deck.",
+    "longDescription": "Summarize a window of git commits (Navi + engineering-agent-registry by default, any repo works) into a non-engineer-friendly product-evolution story, with code-verified flow descriptions, and optionally render it as a single-file HTML slide deck with built-in macOS rendering verification.",
+    "developerName": "Norman",
+    "category": "Productivity",
+    "capabilities": [
+      "Skills"
+    ],
+    "websiteURL": "https://github.com/Norman-else/awesome-skills",
+    "defaultPrompt": [
+      "Use $navi-recap to turn last month's commits into a shareable deck."
+    ],
+    "brandColor": "#8EE88A"
+  }
+}

@@ -1,0 +1,83 @@
+---
+name: navi-recap
+description: Use when the user asks to turn git commit history into a product-evolution story or presentation — e.g. "梳理过去一个月的产品变化", "monthly recap", "做个 PPT/汇报 share 给别人", "what shipped last month", "navi-recap". Defaults to the Navi + engineering-agent-registry repos but works for any repo and time window.
+---
+
+# Navi Recap — git history → product story → slide deck
+
+## Overview
+
+Turn a window of git commits (across one or more repos) into a story a
+non-engineer can follow, optionally rendered as a single-file HTML slide deck.
+
+Two iron rules:
+
+1. **Commit messages are leads, not facts.** Any feature you will draw as a
+   flow must be verified end-to-end in the code first. (Real failure: a commit
+   said "authorization gating" — the message read like a user whitelist; the
+   code was an LLM classifier. The deck would have been wrong.)
+2. **Final states only, never intermediate ones.** Twenty UI-fix commits on the
+   same panel = one bullet describing the final behavior. No week-by-week
+   timeline, no "then we refactored" — the audience sees what the product *is
+   now* vs what it was.
+
+## Inputs (defaults — confirm or override)
+
+| Input | Default |
+|---|---|
+| Repos | `~/Infras/Navi` **and** `~/Infras/engineering-agent-registry` |
+| Window | past month (`--since`) |
+| Audience | non-engineers, Chinese, prefers 人话 + analogies |
+| Stop point | ask: Markdown story only, or full HTML deck |
+
+## Phase 1 — Mine
+
+```bash
+git -C <repo> log --since="<date>" --pretty=format:"%h|%ad|%s" --date=short
+git -C <repo> log --since="<date>" --pretty=format:"%h %s" --shortstat   # size = feature vs fix signal
+```
+
+- **Sweep sibling repos.** Prompts, agent definitions, and CI pipelines often
+  live outside the main repo. Ask the user / check neighbors before concluding.
+- Group commits by product theme. Discard merge commits and pure-fix noise.
+
+## Phase 2 — Verify flows
+
+For every theme that needs a flow diagram, dispatch a read-only explore
+subagent (or read the code yourself) to confirm the end-to-end behavior:
+**who triggers → what the system does → what the user sees**. Ask it to flag
+where reality differs from your draft description, and keep the corrections.
+
+## Phase 3 — Narrate
+
+- Open with a one-sentence TL;DR + headline numbers (commits, repos, new
+  capabilities).
+- Per theme: *what problem* → *analogy in plain language* → *flow as numbered
+  steps* → *old vs new comparison table* where it helps.
+- End with a priority order ("if you only have 10 minutes, present these").
+- One theme per future slide. Group ruthlessly; see iron rule 2.
+
+## Phase 4 — Build the deck (if requested)
+
+Read `references/deck-design.md` first; start from
+`examples/slide-skeleton.html`. Single-file HTML, zero build steps. Save the
+deck next to the analyzed repo (not in /tmp) with a dated filename.
+
+## Phase 5 — Verify rendering
+
+Read `references/mac-verification.md` **before** trying to screenshot the deck.
+macOS has silent traps (`open` strips `#fragment` and `?query` from file URLs;
+headless Chrome may be SIGKILLed; browsers are screenshot-only at "read" tier).
+Verify one instance of each distinct slide layout, not every slide.
+
+## Common mistakes
+
+| Mistake | Reality |
+|---|---|
+| Trusting commit messages for flow diagrams | Messages compress and mislead; verify in code (Phase 2) |
+| Only mining the main repo | Prompts/CI live in sibling repos; the recap silently misses whole features |
+| Timeline / week-by-week organization | Audience needs themes and final states, not chronology |
+| `open "file:///deck.html#7"` to check slide 7 | macOS strips the fragment — you land on slide 1 every time |
+| Headless Chrome for screenshots | Often SIGKILLed in sandboxed envs; budget one attempt, then use the GUI path |
+| Declaring a blank screenshot "broken" | Entry animations + a human may be driving the browser; re-shoot after a pause |
+| Leaving temp verification copies around | User may share the wrong file; delete them and state the real path |

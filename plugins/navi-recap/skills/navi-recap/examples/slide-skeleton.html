@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RECAP DECK SKELETON — replace title</title>
+<!-- Skeleton for a recap slide deck. Contains the four starred page types
+     (cover / stat grid / flow steps / card grid) and the full navigation
+     chrome with every known fix baked in (hashchange listener, ?s=N fallback,
+     touch swipe). Add more slides by copying a <section class="slide">. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;500;700&family=JetBrains+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  /* Re-theme here: match the product's own identity, not a generic palette. */
+  --ink:#0a0e0c; --ink-2:#101612;
+  --line:rgba(158,232,143,.14); --line-strong:rgba(158,232,143,.32);
+  --bone:#e8e6dd; --bone-dim:#9a9a8e;
+  --signal:#8ee88a; --amber:#e8b35a; --red:#e87a6a;
+  --mono:'JetBrains Mono',monospace; --serif:'Noto Serif SC',serif; --sans:'Noto Sans SC',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;overflow:hidden;background:var(--ink);color:var(--bone);font-family:var(--sans);font-weight:300}
+::selection{background:var(--signal);color:var(--ink)}
+
+/* atmosphere: grain + scanlines, no gradients */
+.grain{position:fixed;inset:0;z-index:50;pointer-events:none;opacity:.5;
+  background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3CfeComponentTransfer%3E%3CfeFuncA type='linear' slope='0.05'/%3E%3C/feComponentTransfer%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");}
+.scan{position:fixed;inset:0;z-index:49;pointer-events:none;opacity:.35;
+  background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.18) 3px 4px)}
+
+/* chrome */
+.hud{position:fixed;z-index:60;font-family:var(--mono);font-size:11px;letter-spacing:.14em;color:var(--bone-dim)}
+.hud.tl{top:26px;left:34px}.hud.tr{top:26px;right:34px}
+.hud b{color:var(--signal);font-weight:600}
+.counter{position:fixed;z-index:60;bottom:24px;right:34px;font-family:var(--mono);font-size:12px;letter-spacing:.2em;color:var(--bone-dim)}
+.counter b{color:var(--signal);font-weight:600}
+.bar{position:fixed;z-index:60;bottom:0;left:0;height:2px;background:var(--signal);width:0%;transition:width .45s cubic-bezier(.7,0,.2,1)}
+.navhint{position:fixed;z-index:60;bottom:24px;left:34px;font-family:var(--mono);font-size:11px;color:var(--bone-dim);opacity:.7}
+.navhint kbd{border:1px solid var(--line-strong);border-radius:3px;padding:1px 6px;color:var(--signal)}
+.arrows{position:fixed;z-index:60;bottom:60px;right:34px;display:flex;gap:8px}
+.arrows button{background:transparent;border:1px solid var(--line-strong);color:var(--bone-dim);width:38px;height:38px;font-family:var(--mono);font-size:15px;cursor:pointer}
+.arrows button:hover{color:var(--ink);background:var(--signal);border-color:var(--signal)}
+
+/* deck + staggered reveals */
+.deck{position:relative;z-index:1;height:100%}
+.slide{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:96px 7vw 110px;visibility:hidden;opacity:0;transform:translateY(14px);transition:opacity .55s ease,transform .55s ease,visibility 0s .55s}
+.slide.active{visibility:visible;opacity:1;transform:none;transition:opacity .55s ease,transform .55s ease}
+.inner{width:100%;max-width:1180px}
+.rv{opacity:0}
+.slide.active .rv{animation:rise .75s cubic-bezier(.2,.7,.2,1) both;animation-delay:calc(var(--d,0)*90ms)}
+@keyframes rise{from{opacity:0;transform:translateY(22px)}to{opacity:1;transform:none}}
+
+/* shared type */
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.3em;color:var(--signal);margin-bottom:22px;display:flex;align-items:center;gap:14px}
+.eyebrow::after{content:"";flex:0 0 64px;height:1px;background:var(--line-strong)}
+.eyebrow .idx{color:var(--bone-dim)}
+h2{font-family:var(--serif);font-weight:900;font-size:clamp(34px,4.6vw,58px);line-height:1.15;margin-bottom:14px}
+h2 em{font-style:normal;color:var(--signal)}
+.lede{font-size:clamp(15px,1.25vw,18px);color:var(--bone-dim);line-height:1.9;max-width:62ch;margin-bottom:40px}
+.lede b{color:var(--bone);font-weight:500}
+
+/* cover */
+.cover .sys{font-family:var(--mono);font-size:12px;letter-spacing:.32em;color:var(--bone-dim);margin-bottom:30px}
+.cover .sys b{color:var(--signal);font-weight:600}
+.cover h1{font-family:var(--serif);font-weight:900;font-size:clamp(56px,8.5vw,116px);line-height:1.06}
+.cover h1 .accent{color:var(--signal)}
+.cover .sub{font-family:var(--serif);font-size:clamp(20px,2.4vw,30px);color:var(--bone-dim);margin-top:26px}
+.cover .sub b{color:var(--bone);font-weight:600}
+.cover .meta{margin-top:60px;display:flex;gap:42px;font-family:var(--mono);font-size:12.5px;letter-spacing:.12em;color:var(--bone-dim)}
+.cover .meta div b{display:block;color:var(--signal);font-size:24px;font-weight:600;margin-bottom:6px}
+
+/* stat grid */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);margin-bottom:36px}
+.stat{background:var(--ink-2);padding:28px 26px;position:relative}
+.stat::before{content:"";position:absolute;top:0;left:0;width:100%;height:2px;background:var(--signal);transform:scaleX(0);transform-origin:left;transition:transform .5s .2s}
+.slide.active .stat::before{transform:scaleX(1)}
+.stat .n{font-family:var(--serif);font-size:clamp(40px,4.5vw,60px);font-weight:900;color:var(--signal);line-height:1}
+.stat .t{font-size:14px;margin-top:12px;font-weight:500}
+.stat .d{font-family:var(--mono);font-size:11px;color:var(--bone-dim);margin-top:6px;line-height:1.7}
+
+/* flow steps */
+.flow{position:relative;margin-top:8px}
+.fstep{display:grid;grid-template-columns:64px 1fr;gap:0 26px;position:relative;padding-bottom:26px}
+.fstep:last-child{padding-bottom:0}
+.fstep::before{content:"";position:absolute;left:31px;top:46px;bottom:6px;width:1px;background:linear-gradient(var(--line-strong),var(--line))}
+.fstep:last-child::before{display:none}
+.fnum{width:62px;height:40px;border:1px solid var(--line-strong);display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:13px;color:var(--signal);background:var(--ink-2)}
+.fbody h4{font-size:16.5px;font-weight:600;padding-top:8px}
+.fbody h4 .tag{font-family:var(--mono);font-size:10.5px;color:var(--bone-dim);border:1px solid var(--line);padding:2px 8px;margin-left:12px;vertical-align:2px}
+.fbody p{font-size:13.5px;color:var(--bone-dim);line-height:1.85;margin-top:6px;max-width:72ch}
+.fbody p b{color:var(--signal);font-weight:500}
+
+/* card grid */
+.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.cards.three{grid-template-columns:repeat(3,1fr)}
+.card{border:1px solid var(--line);background:var(--ink-2);padding:22px 24px}
+.card:hover{border-color:var(--line-strong)}
+.card .ck{font-family:var(--mono);font-size:10.5px;letter-spacing:.2em;color:var(--signal);margin-bottom:10px}
+.card h4{font-size:16px;font-weight:600;margin-bottom:8px}
+.card p{font-size:13px;color:var(--bone-dim);line-height:1.8}
+.card p b{color:var(--bone);font-weight:500}
+
+@media (max-width:900px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .cards,.cards.three{grid-template-columns:1fr}
+  .slide{padding:80px 6vw 110px;overflow-y:auto;align-items:flex-start}
+}
+</style>
+</head>
+<body>
+
+<div class="grain"></div><div class="scan"></div>
+<div class="hud tl"><b>PRODUCT</b> · MONTHLY REVIEW</div>
+<div class="hud tr">YYYY.MM.DD — MM.DD</div>
+<div class="counter"><b id="cur">01</b> / <span id="total">04</span></div>
+<div class="navhint"><kbd>←</kbd> <kbd>→</kbd> 翻页 · <kbd>F</kbd> 全屏</div>
+<div class="arrows"><button id="prev">←</button><button id="next">→</button></div>
+<div class="bar" id="bar"></div>
+
+<div class="deck" id="deck">
+
+<!-- 01 · COVER -->
+<section class="slide cover">
+  <div class="inner">
+    <div class="sys rv" style="--d:0">TEAM · <b>PRODUCT NAME</b> · INTERNAL REVIEW</div>
+    <h1 class="rv" style="--d:1">Product <span class="accent">月度</span><br>产品演进</h1>
+    <div class="sub rv" style="--d:2">一句话副标题，<b>关键词</b> 加粗</div>
+    <div class="meta">
+      <div class="rv" style="--d:3"><b>190+</b>COMMITS</div>
+      <div class="rv" style="--d:4"><b>2</b>REPOSITORIES</div>
+      <div class="rv" style="--d:5"><b>31</b>DAYS</div>
+    </div>
+  </div>
+</section>
+
+<!-- 02 · STAT GRID + TL;DR -->
+<section class="slide">
+  <div class="inner">
+    <div class="eyebrow rv" style="--d:0"><span class="idx">02</span>EXECUTIVE SUMMARY</div>
+    <h2 class="rv" style="--d:1">一句话总结，<em>重点上色</em></h2>
+    <p class="lede rv" style="--d:2">两行以内的 TL;DR，<b>关键论断</b>加粗。</p>
+    <div class="stats">
+      <div class="stat rv" style="--d:3"><div class="n">1</div><div class="t">大数字标题</div><div class="d">两行 mono 说明</div></div>
+      <div class="stat rv" style="--d:4"><div class="n">2</div><div class="t">大数字标题</div><div class="d">两行 mono 说明</div></div>
+      <div class="stat rv" style="--d:5"><div class="n">3</div><div class="t">大数字标题</div><div class="d">两行 mono 说明</div></div>
+      <div class="stat rv" style="--d:6"><div class="n">4</div><div class="t">大数字标题</div><div class="d">两行 mono 说明</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 03 · FLOW STEPS -->
+<section class="slide">
+  <div class="inner">
+    <div class="eyebrow rv" style="--d:0"><span class="idx">03</span>SECTION · TOPIC</div>
+    <h2 class="rv" style="--d:1">流程标题<em>重点</em></h2>
+    <p class="lede rv" style="--d:2">流程 = 谁触发 → 系统做什么 → 用户看到什么。最多 5 步。</p>
+    <div class="flow">
+      <div class="fstep rv" style="--d:3">
+        <div class="fnum">01</div>
+        <div class="fbody"><h4>步骤标题<span class="tag">TECH TAG</span></h4>
+        <p>一两句说明，<b>关键词</b>上色。</p></div>
+      </div>
+      <div class="fstep rv" style="--d:4">
+        <div class="fnum">02</div>
+        <div class="fbody"><h4>步骤标题</h4><p>一两句说明。</p></div>
+      </div>
+      <div class="fstep rv" style="--d:5">
+        <div class="fnum">03</div>
+        <div class="fbody"><h4>步骤标题</h4><p>一两句说明。</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 04 · CARD GRID -->
+<section class="slide">
+  <div class="inner">
+    <div class="eyebrow rv" style="--d:0"><span class="idx">04</span>SECTION · FEATURES</div>
+    <h2 class="rv" style="--d:1">并列特性<em>卡片</em></h2>
+    <div class="cards three">
+      <div class="card rv" style="--d:2"><div class="ck">KEY-ONE</div><h4>卡片标题</h4><p>说明文字，<b>重点</b>加粗。</p></div>
+      <div class="card rv" style="--d:3"><div class="ck">KEY-TWO</div><h4>卡片标题</h4><p>说明文字。</p></div>
+      <div class="card rv" style="--d:4"><div class="ck">KEY-THREE</div><h4>卡片标题</h4><p>说明文字。</p></div>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<script>
+const slides=[...document.querySelectorAll('.slide')];
+const bar=document.getElementById('bar'),cur=document.getElementById('cur');
+document.getElementById('total').textContent=String(slides.length).padStart(2,'0');
+let i=0;
+function go(n){
+  i=Math.max(0,Math.min(slides.length-1,n));
+  slides.forEach((s,k)=>s.classList.toggle('active',k===i));
+  bar.style.width=((i+1)/slides.length*100)+'%';
+  cur.textContent=String(i+1).padStart(2,'0');
+  location.hash=i+1;
+}
+addEventListener('keydown',e=>{
+  if(['ArrowRight','PageDown',' '].includes(e.key)){e.preventDefault();go(i+1)}
+  else if(['ArrowLeft','PageUp'].includes(e.key)){e.preventDefault();go(i-1)}
+  else if(e.key==='Home')go(0);
+  else if(e.key==='End')go(slides.length-1);
+  else if(e.key.toLowerCase()==='f'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()}
+});
+document.getElementById('next').onclick=()=>go(i+1);
+document.getElementById('prev').onclick=()=>go(i-1);
+let tx=0;
+addEventListener('touchstart',e=>tx=e.touches[0].clientX,{passive:true});
+addEventListener('touchend',e=>{const d=e.changedTouches[0].clientX-tx;if(Math.abs(d)>60)go(d<0?i+1:i-1)},{passive:true});
+/* #N deep link + hashchange listener + ?s=N fallback (macOS `open` strips
+   fragments AND queries from file:// URLs — see references/mac-verification.md).
+   Verification copies replace the syncHash() call below with go(N-1). */
+function syncHash(){const q=new URLSearchParams(location.search).get('s');const h=parseInt(location.hash.slice(1)||q);go(isNaN(h)?0:h-1)}
+addEventListener('hashchange',syncHash);
+syncHash();
+</script>
+</body>
+</html>

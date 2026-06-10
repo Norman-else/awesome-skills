@@ -23,6 +23,10 @@ installed with the core pack — install it separately.
 - `vault-share`
 - `vault-web-ui`
 
+`navi-recap` (optional — install separately):
+
+- `navi-recap` — git commit history → product-evolution story → single-file HTML slide deck
+
 ## Repository layout
 
 ```text
