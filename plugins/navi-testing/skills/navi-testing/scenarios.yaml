@@ -9,7 +9,7 @@
 # Fields:
 #   id       (required)  T-<NNN>, unique, sequential from T-001 (pattern ^T-[0-9]{3}$)
 #   title    (required)  short human label
-#   message  (required)  exact text to send; the skill prepends only @Navi (no
+#   message  (required)  exact text to send; the skill prepends only @Navi Dev (no
 #                        test marker — the message ts is the trace correlation key)
 #   expect   (required)  plain language: what a correct reply conveys + what Navi
 #                        should / must NOT do. Do NOT hand-write exact tool names

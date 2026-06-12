@@ -7,7 +7,7 @@ Fill these in for your environment. The skill reads this file at the start of a 
 - **Workspace**: Mercaso
 - **Test channel name**: `navi-automation-testing`
 - **Test channel id**: `C0B7YGB706M`
-- **Navi bot @handle**: `@Navi`  <!-- used in the message text -->
+- **Navi bot @handle**: `@Navi Dev`  <!-- used in the message text -->
 - **Navi bot user id**: `U0ANZ20J85Q`  <!-- e.g. U0XXXXXXX; if blank, the skill
      resolves it by looking up the "Navi" bot in the workspace users -->
 - **Test sender email**: `<FILL ME>`  <!-- the human/identity the skill posts as;
