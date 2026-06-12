@@ -8,9 +8,10 @@ Fill these in for your environment. The skill reads this file at the start of a 
 - **Test channel name**: `navi-automation-testing`
 - **Test channel id**: `C0B7YGB706M`
 - **Navi bot @handle**: `@Navi Dev`  <!-- used in the message text -->
-- **Navi bot user id**: `U0ANZ20J85Q`  <!-- e.g. U0XXXXXXX; if blank, the skill
-     resolves it by looking up the "Navi" bot in the workspace users -->
-- **Test sender email**: `<FILL ME>`  <!-- the human/identity the skill posts as;
+- **Navi bot user id**: `U0B9ZBYJ90V`  <!-- @navi_dev (Real Name "Navi Dev") — the
+     DEV app. NOTE: U0ANZ20J85Q is @engineeringagent ("Navi") = the PROD app; do
+     NOT use it here or the test hits prod (traces land in the prod DB, not dev). -->
+- **Test sender email**: `norman.zuo@mercaso.com`  <!-- the human/identity the skill posts as;
      used as a fallback key to correlate the trace (agent_traces.user_email) -->
 - **Report channel id**: `C0B7YGB706M`  <!-- where the end-of-run report is posted
      (step 6). Defaults to the test channel itself. Set to a different channel id or
