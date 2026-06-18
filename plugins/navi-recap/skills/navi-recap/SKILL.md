@@ -59,21 +59,29 @@ where reality differs from your draft description, and keep the corrections.
 
 ## Phase 4 — Build the deck (if requested)
 
-Two build modes — **both keep navi-recap's signature green-mono identity**.
-Phases 1–3 and the two iron rules are identical either way; only rendering
-differs. See `references/ppt-kit-mode.md` for the full comparison + layout map.
+Two output forms — both build on the ppt-kit design system, so **both support
+theme choice** (37 themes; default `navi-signal` green-mono; press **T** to
+cycle live). The forms differ only in packaging. **Default to single-file.**
+Phases 1–3 and the two iron rules are identical either way. **navi-recap does
+not use presenter mode / 逐字稿 — don't offer it in either form.**
 
-- **Native single-file (default).** Read `references/deck-design.md` first;
-  start from `examples/slide-skeleton.html`. One self-contained HTML file,
-  zero build, maximally portable. Use unless the user wants more.
-- **ppt-kit mode (richer).** Build a `deck + assets/` folder on the vendored
-  `ppt-kit/` design system: 36 themes, 31 layouts, the full animation library,
-  **S-key presenter mode + 逐字稿**, and `render.sh` PNG export. Theme it with
-  `themes/navi-signal.css` to keep the green-mono look. Choose this when the
-  user asks for presenter mode / speaker notes / a specific theme / richer
-  layouts / PNG export. Multi-file, not single-file. Guide:
-  `references/ppt-kit-mode.md`. (`ppt-kit/` is auto-vendored from upstream by
-  `scripts/update-ppt.sh` — never hand-edit it.)
+- **Single-file — THE DEFAULT.** Copy `examples/themed-single-skeleton.html` —
+  one self-contained HTML with `base.css` + all 37 themes + the nav/T runtime
+  inlined (zero external files, maximally portable). Fill in slides by pasting
+  `<section class="slide">` blocks from `ppt-kit/templates/single-page/*.html`
+  and replacing the demo data. Default theme is `navi-signal`; the user can
+  press **T** to cycle all 37. Read `references/deck-design.md` for the
+  aesthetic + content rules.
+- **ppt-kit folder form — opt-in only.** A `deck + assets/` folder that links
+  `ppt-kit/` directly. Use only when the user needs things that don't inline
+  cleanly: the canvas-FX animation library or `render.sh` PNG export. Multi-file.
+  Guide: `references/ppt-kit-mode.md`.
+
+**Theme selection (both forms):** recommend a theme by audience (`navi-signal`
+default + alternatives) — see `references/ppt-kit-mode.md` → "Choosing a theme".
+The user can always press **T**. The single-file template and `ppt-kit/` are
+auto-vendored/generated from upstream by `scripts/update-ppt.sh` — never
+hand-edit `ppt-kit/` or `examples/themed-single-skeleton.html`; re-run the script.
 
 **Output location (fixed convention):** save the deck under the main repo's
 root in a `monthly_product/` directory — create it if it doesn't exist:

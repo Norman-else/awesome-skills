@@ -116,22 +116,23 @@ fi
 
 # ── 3. Vendor the DESIGN SUBSET into navi-recap's ppt-kit/ ────────────────────
 # Subset = the design system navi-recap absorbs: themes, layouts, the full
-# animation library, the keyboard+presenter runtime, and the render script.
-# Rebuilt from scratch each run so the mirror stays exact.
+# animation library, the keyboard runtime, and the render script. Rebuilt from
+# scratch each run so the mirror stays exact. navi-recap deliberately does NOT
+# use presenter mode, so its presenter-specific files are excluded here (the
+# S-key code is baked into runtime.js and stays, but is unused/undocumented).
 if [[ -n "$FORCE" || "$(stamped_sha "$navi_kit_dir/UPSTREAM.json")" != "$sha" ]]; then
-  echo "→ vendoring navi-recap/ppt-kit (design subset incl. presenter mode)"
+  echo "→ vendoring navi-recap/ppt-kit (design subset, presenter mode excluded)"
   rm -rf "$navi_kit_dir"
   mkdir -p "$navi_kit_dir"/{assets,templates/single-page,scripts}
-  rsync -a "$src/assets"/ "$navi_kit_dir/assets"/                       # base.css, fonts.css, runtime.js (presenter), themes/, animations/
+  rsync -a "$src/assets"/ "$navi_kit_dir/assets"/                       # base.css, fonts.css, runtime.js, themes/, animations/
   rsync -a "$src/templates/single-page"/ "$navi_kit_dir/templates/single-page"/
-  # presenter-mode reference deck (only this full-deck; it's the presenter exemplar)
-  if [[ -d "$src/templates/full-decks/presenter-mode-reveal" ]]; then
-    mkdir -p "$navi_kit_dir/templates/full-decks"
-    rsync -a "$src/templates/full-decks/presenter-mode-reveal"/ \
-      "$navi_kit_dir/templates/full-decks/presenter-mode-reveal"/
-  fi
-  # catalogs worth keeping next to the assets they describe
-  [[ -d "$src/references" ]] && rsync -a "$src/references"/ "$navi_kit_dir/references"/
+  # Keep only the pure catalogs navi-recap's own docs point at (themes/layouts/
+  # animations). Excluded: presenter-mode.md (unused), full-decks.md (no full-decks
+  # vendored), and authoring-guide.md (its speaker-notes/S-key workflow conflicts
+  # with navi-recap's no-presenter rule and overlaps navi-recap's own docs).
+  [[ -d "$src/references" ]] && rsync -a \
+    --exclude='presenter-mode.md' --exclude='full-decks.md' --exclude='authoring-guide.md' \
+    "$src/references"/ "$navi_kit_dir/references"/
   # scripts: render (PNG export) + new-deck (scaffold)
   for s in render.sh new-deck.sh; do
     [[ -f "$src/scripts/$s" ]] && install -m 0755 "$src/scripts/$s" "$navi_kit_dir/scripts/$s"
@@ -139,6 +140,9 @@ if [[ -n "$FORCE" || "$(stamped_sha "$navi_kit_dir/UPSTREAM.json")" != "$sha" ]]
   # preserve MIT attribution alongside the vendored copy
   [[ -f "$src/LICENSE" ]] && cp "$src/LICENSE" "$navi_kit_dir/LICENSE"
   write_stamp "$navi_kit_dir" "design-subset"
+  # regenerate the themed single-file template from the freshly vendored ppt-kit
+  # so its embedded base.css + 36 themes stay in sync with upstream.
+  bash "$repo_root/scripts/build-single-template.sh"
   bumps+=("navi-recap → $(bump_plugin navi-recap)")
 else
   echo "→ navi-recap/ppt-kit already at ${sha:0:10}; skip"

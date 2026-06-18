@@ -3,7 +3,7 @@
  * Recreates navi-recap's signature look (signal-green on near-black ink, bone
  * body text, serif display headlines + mono labels) as a drop-in ppt-kit theme,
  * so a ppt-kit-mode deck keeps the navi-recap identity while gaining its
- * layouts / animations / presenter mode.
+ * layouts and animations.
  *
  * navi-recap-owned — lives OUTSIDE ppt-kit/, so scripts/update-ppt.sh never
  * overwrites it. To use: load AFTER ppt-kit/assets/base.css, e.g.
