@@ -1,0 +1,10 @@
+{
+  "name": "html-ppt",
+  "description": "HTML PPT Studio — author professional static HTML presentations driven by templates: 36 themes, 31 layouts, 27 CSS + 20 canvas-FX animations, a token-based design system, and a keyboard-navigable presenter mode. Use when the user asks for a presentation, PPT, slides, deck, keynote, slideshow, 幻灯片/演讲稿, or a 小红书 图文. Vendored from lewislulu/html-ppt-skill (MIT).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Norman",
+    "url": "https://github.com/Norman-else"
+  },
+  "homepage": "https://github.com/Norman-else/awesome-skills"
+}

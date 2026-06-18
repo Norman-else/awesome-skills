@@ -27,6 +27,10 @@ installed with the core pack — install it separately.
 
 - `navi-recap` — git commit history → product-evolution story → single-file HTML slide deck
 
+`html-ppt` (optional — install separately):
+
+- `html-ppt` — HTML PPT Studio: author professional static HTML decks from templates (36 themes, 31 layouts, 27 CSS + 20 canvas-FX animations, presenter mode). Vendored from [lewislulu/html-ppt-skill](https://github.com/lewislulu/html-ppt-skill) (MIT).
+
 ## Repository layout
 
 ```text

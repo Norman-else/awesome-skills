@@ -59,8 +59,21 @@ where reality differs from your draft description, and keep the corrections.
 
 ## Phase 4 — Build the deck (if requested)
 
-Read `references/deck-design.md` first; start from
-`examples/slide-skeleton.html`. Single-file HTML, zero build steps.
+Two build modes — **both keep navi-recap's signature green-mono identity**.
+Phases 1–3 and the two iron rules are identical either way; only rendering
+differs. See `references/ppt-kit-mode.md` for the full comparison + layout map.
+
+- **Native single-file (default).** Read `references/deck-design.md` first;
+  start from `examples/slide-skeleton.html`. One self-contained HTML file,
+  zero build, maximally portable. Use unless the user wants more.
+- **ppt-kit mode (richer).** Build a `deck + assets/` folder on the vendored
+  `ppt-kit/` design system: 36 themes, 31 layouts, the full animation library,
+  **S-key presenter mode + 逐字稿**, and `render.sh` PNG export. Theme it with
+  `themes/navi-signal.css` to keep the green-mono look. Choose this when the
+  user asks for presenter mode / speaker notes / a specific theme / richer
+  layouts / PNG export. Multi-file, not single-file. Guide:
+  `references/ppt-kit-mode.md`. (`ppt-kit/` is auto-vendored from upstream by
+  `scripts/update-ppt.sh` — never hand-edit it.)
 
 **Output location (fixed convention):** save the deck under the main repo's
 root in a `monthly_product/` directory — create it if it doesn't exist:
