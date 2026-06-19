@@ -1,0 +1,49 @@
+/* theme: navi-signal — navi-recap house style ported into the ppt-kit token system.
+ *
+ * Recreates navi-recap's signature look (signal-green on near-black ink, bone
+ * body text, serif display headlines + mono labels) as a drop-in ppt-kit theme,
+ * so a ppt-kit-mode deck keeps the navi-recap identity while gaining its
+ * layouts and animations.
+ *
+ * navi-recap-owned — lives OUTSIDE ppt-kit/, so scripts/update-ppt.sh never
+ * overwrites it. To use: load AFTER ppt-kit/assets/base.css, e.g.
+ *   <link rel="stylesheet" href="ppt-kit/assets/base.css">
+ *   <link rel="stylesheet" id="theme-link" href="themes/navi-signal.css">
+ */
+:root {
+  --bg: #0a0e0c;
+  --bg-soft: #101612;
+  --surface: #101612;
+  --surface-2: #0d2614;
+  --border: rgba(158,232,143,.14);
+  --border-strong: rgba(158,232,143,.32);
+  --text-1: #e8e6dd;            /* bone */
+  --text-2: #9a9a8e;            /* bone-dim */
+  --text-3: #6b6b60;
+  --accent: #8ee88a;            /* signal green — "good / new" */
+  --accent-2: #67ffd0;
+  --accent-3: #e8b35a;          /* amber — "manual gate" */
+  --good: #8ee88a;
+  --warn: #e8b35a;
+  --bad:  #e87a6a;
+  --grad: linear-gradient(135deg,#8ee88a,#67ffd0);
+  --grad-soft: linear-gradient(135deg,#101612,#0d2614);
+  --radius: 6px;
+  --radius-sm: 3px;
+  --radius-lg: 10px;
+  --shadow: 0 0 30px rgba(142,232,138,.12);
+  --shadow-lg: 0 0 60px rgba(142,232,138,.22);
+  --font-sans: 'Noto Sans SC',-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;
+  --font-serif: 'Noto Serif SC',Georgia,serif;
+  --font-mono: 'JetBrains Mono','IBM Plex Mono',SFMono-Regular,Menlo,monospace;
+  --font-display: var(--font-serif);    /* serif headlines = the navi signature */
+  --letter-tight: -.01em;
+  --letter-normal: 0;
+}
+
+/* signature touches (mirrors how upstream themes layer small tweaks on tokens) */
+body { font-weight: 300; }
+h1,h2,h3 { font-weight: 900; }
+.card { border: 1px solid var(--border-strong); background: rgba(16,22,18,.6); }
+/* mono eyebrows/labels glow faintly like the native skeleton */
+.eyebrow,.kicker,[data-mono] { color: var(--accent); text-shadow: 0 0 8px rgba(142,232,138,.25); }

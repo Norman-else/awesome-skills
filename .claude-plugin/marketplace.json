@@ -79,6 +79,22 @@
       ]
     },
     {
+      "name": "product-recap",
+      "description": "Turn one or more local repos' git history into a product-evolution story and a single-file HTML slide deck. Run from any directory; mines the canonical branch (origin/default) so a feature-branch checkout is fine; merge sibling repos into one deck, scope to a sub-path, and pick a time window; verify flows in code, narrate for non-engineers, build and visually verify the deck. Install separately.",
+      "source": "./plugins/product-recap",
+      "version": "0.1.0",
+      "category": "productivity",
+      "tags": [
+        "git",
+        "recap",
+        "slides",
+        "presentation",
+        "html-ppt",
+        "codex",
+        "claude-code"
+      ]
+    },
+    {
       "name": "html-ppt",
       "description": "HTML PPT Studio — author professional static HTML presentations driven by templates: 36 themes, 31 layouts, 27 CSS + 20 canvas-FX animations, a token-based design system, and a keyboard-navigable presenter mode. Use for any PPT/slides/deck/keynote/幻灯片/小红书图文 request. Vendored from lewislulu/html-ppt-skill (MIT). Install separately.",
       "source": "./plugins/html-ppt",
