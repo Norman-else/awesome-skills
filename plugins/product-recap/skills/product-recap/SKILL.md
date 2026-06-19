@@ -27,7 +27,7 @@ Two iron rules:
 |---|---|
 | Repo(s) | the current repo if cwd is a git work tree; else ask |
 | Branch | `origin/<default-branch>` per repo (auto-detected; overridable) |
-| Window | past month (`--since`) |
+| Window | past month; accepts a start (`--since`) **or a closed range** (`--since` + `--until`) |
 | Path scope | none (optional `-- <subpath>` per repo) |
 | Audience | non-engineers; plain language + analogies; write in the user's language |
 | Theme | `navi-signal` (press **T** to cycle 37) |
@@ -56,10 +56,15 @@ Per repo: fetch, resolve the default branch, then log against the `origin/` ref.
 git -C <repo> fetch --quiet origin
 # default branch via origin/HEAD; if unset, fall back to main then master:
 BR=$(git -C <repo> symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's#^origin/##')
-git -C <repo> log --since="<date>" --pretty=format:"%h|%ad|%s" --date=short "origin/$BR" [-- <path>]
-git -C <repo> log --since="<date>" --pretty=format:"%h %s" --shortstat "origin/$BR" [-- <path>]  # size = feature vs fix signal
+git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h|%ad|%s" --date=short "origin/$BR" [-- <path>]
+git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h %s" --shortstat "origin/$BR" [-- <path>]  # size = feature vs fix signal
 ```
 
+- **Window** — default is the past month (`--since` only, end = today). The user
+  may give just a start ("since May 1", "last quarter") or a **closed range**
+  with both ends ("April only", "2026.04.01–2026.05.01") — pass `--until` for the
+  end. Whatever the actual window is, `<START>`/`<END>` in the output filename
+  must match it (open-ended → `<END>` = today).
 - The branch is overridable (e.g. a release branch); default is `origin/HEAD`.
 - **Tag every commit with the repo it came from** — Phase 2 needs to know which
   repo's code to read, and the deck merges across repos (see below).

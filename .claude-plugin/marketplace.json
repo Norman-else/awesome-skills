@@ -80,9 +80,9 @@
     },
     {
       "name": "product-recap",
-      "description": "Turn one or more local repos' git history into a product-evolution story and a single-file HTML slide deck. Run from any directory; mines the canonical branch (origin/default) so a feature-branch checkout is fine; merge sibling repos into one deck, scope to a sub-path, and pick a time window; verify flows in code, narrate for non-engineers, build and visually verify the deck. Install separately.",
+      "description": "Turn one or more local repos' git history into a product-evolution story and a single-file HTML slide deck. Run from any directory; mines the canonical branch (origin/default) so a feature-branch checkout is fine; merge sibling repos into one deck, scope to a sub-path, and pick a time window (open-ended or a closed start–end range); verify flows in code, narrate for non-engineers, build and visually verify the deck. Install separately.",
       "source": "./plugins/product-recap",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "category": "productivity",
       "tags": [
         "git",
