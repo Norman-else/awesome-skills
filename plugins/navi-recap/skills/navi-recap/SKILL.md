@@ -26,16 +26,37 @@ Two iron rules:
 | Input | Default |
 |---|---|
 | Repos | `~/Infras/Navi` **and** `~/Infras/engineering-agent-registry` |
-| Window | past month (`--since`) |
+| Branch | always `master` (local if checked out on it; else the remote master) |
+| Window | past month; a start (`--since`) **or a closed range** (`--since` + `--until`) |
 | Audience | non-engineers; plain language + analogies; write in the user's language |
 | Stop point | ask: Markdown story only, or full HTML deck |
 
 ## Phase 1 — Mine
 
+**Mine the canonical `master`, never the current checkout.** A clone may be
+parked on a feature branch; the recap must reflect what actually shipped. Fetch
+master, then log `origin/master` — this reads the **remote** master regardless of
+which branch the working copy is on.
+
 ```bash
-git -C <repo> log --since="<date>" --pretty=format:"%h|%ad|%s" --date=short
-git -C <repo> log --since="<date>" --pretty=format:"%h %s" --shortstat   # size = feature vs fix signal
+git -C <repo> fetch --quiet origin master
+git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h|%ad|%s" --date=short origin/master
+git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h %s" --shortstat origin/master  # size = feature vs fix signal
 ```
+
+- **Window** — default past month (`--since` only, end = today). The user may
+  give just a start, or a **closed range** with both ends ("April only",
+  "2026.04.01–2026.05.01") via `--until`. The output filename's date range must
+  match the actual window (open-ended → end = today).
+- **Reading code at master (Phase 2).** If the checkout is already on `master`,
+  read in place. If it's on another branch, don't read the diverged working tree
+  — add a throwaway worktree at the fetched master and read from there:
+
+  ```bash
+  git -C <repo> worktree add --detach /tmp/navi-recap-<name>-master origin/master
+  # ... explore/verify flows here ...
+  git -C <repo> worktree remove --force /tmp/navi-recap-<name>-master
+  ```
 
 - **Sweep sibling repos.** Prompts, agent definitions, and CI pipelines often
   live outside the main repo. Ask the user / check neighbors before concluding.
@@ -130,6 +151,7 @@ hard-coded start slide leak into the real deck.
 
 | Mistake | Reality |
 |---|---|
+| Mining the current checkout | A clone may sit on a feature branch; fetch + log `origin/master` (and read code via a master worktree) so the recap reflects what shipped |
 | Trusting commit messages for flow diagrams | Messages compress and mislead; verify in code (Phase 2) |
 | Only mining the main repo | Prompts/CI live in sibling repos; the recap silently misses whole features |
 | Timeline / week-by-week organization | Audience needs themes and final states, not chronology |
