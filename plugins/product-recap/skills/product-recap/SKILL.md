@@ -1,6 +1,6 @@
 ---
 name: product-recap
-description: Use when an engineer wants to turn one or more repos' git history into a product-evolution story or HTML slide deck — for ANY repo, not just Navi. Run it from any directory. Inside a git repo it mines local clones (the current repo + any named siblings) on the canonical branch (origin/default, so a feature-branch checkout is fine); outside a repo it resolves the repo from natural language against the Mercaso GitHub org and mines its master branch. Merge sibling repos into one deck, optionally scope to a sub-path, give a time window (open-ended or a closed start–end range), verify flows in code, narrate for non-engineers, and build a single-file HTML deck. Triggers on "summarize this repo's commits into a deck", "recap the changes under services/x last quarter", "make a slide deck of what shipped across these two repos", "recap the Mercaso checkout service last month", "product-recap".
+description: Use when an engineer wants to turn one or more repos' git history into a product-evolution story or HTML slide deck — for ANY repo, not just Navi. Run it from any directory. It always recaps the canonical master branch: a local clone is mined only when it's checked out on master; if the clone is on another branch, or cwd is not a repo (resolve the repo from natural language against the Mercaso GitHub org), it reads master from the remote instead. Merge sibling repos into one deck, optionally scope to a sub-path, give a time window (open-ended or a closed start–end range), verify flows in code, narrate for non-engineers, and build a single-file HTML deck. Triggers on "summarize this repo's commits into a deck", "recap the changes under services/x last quarter", "make a slide deck of what shipped across these two repos", "recap the Mercaso checkout service last month", "product-recap".
 ---
 
 # Product Recap — git history → product story → slide deck
@@ -25,8 +25,8 @@ Two iron rules:
 
 | Input | Default |
 |---|---|
-| Repo(s) | local: the current repo if cwd is a git work tree; otherwise resolve from natural language against the `Mercaso` org |
-| Branch | `origin/<default-branch>` per repo (auto-detected; overridable) |
+| Repo(s) | local clone on `master` (cwd or named siblings); else Mercaso remote (local clone off `master`, or cwd not a repo → resolve from natural language) |
+| Branch | always `master` (fall back to `main` if absent) |
 | Window | past month; accepts a start (`--since`) **or a closed range** (`--since` + `--until`) |
 | Path scope | none (optional `-- <subpath>` per repo) |
 | Audience | non-engineers; plain language + analogies; write in the user's language |
@@ -35,60 +35,67 @@ Two iron rules:
 
 ## Running location & repo resolution
 
-Runs from **any directory**. How repos are resolved depends on whether cwd is a
-git work tree — there are two modes:
+Runs from **any directory**. For **each** repo to recap, pick the source with
+this decision — the rule is "only trust a local clone that is actually sitting on
+`master`; otherwise go to the remote":
 
-### Local mode — cwd is inside a git work tree
+```
+Is the path a local git work tree?
+├─ Yes, and `git rev-parse --abbrev-ref HEAD` == master  → LOCAL mode (mine it on master)
+├─ Yes, but the checkout is NOT on master                → REMOTE mode (its Mercaso master)
+└─ No (cwd not a repo)                                    → REMOTE mode (resolve from natural language)
+```
 
-- That repo is the default repo to mine.
-- The engineer may name **additional** local repo paths (merged into one deck).
-- Validate each: `git -C <repo> rev-parse --is-inside-work-tree` must print
-  `true`; if one doesn't, stop and name which path failed.
-- Mine each locally — fetch + `origin/<default-branch>` (see Phase 1, Local).
+Why: a clone parked on a dev/feature branch is not a trustworthy mirror of what
+shipped, so we don't read it — we go straight to the canonical remote `master`.
 
-### Remote mode — cwd is NOT a git work tree (Mercaso org)
+### LOCAL mode — local clone currently on `master`
 
-When you're not in a repo, the engineer describes the target in **natural
-language** ("最近一个月的 backend-delivery", "recap the checkout service"). Resolve
-it yourself against the **`Mercaso` GitHub org** and proceed — don't just ask for
-a path:
+- The repo (cwd by default, plus any named sibling paths) is mined in place.
+- Validate it is a work tree: `git -C <repo> rev-parse --is-inside-work-tree`
+  prints `true`.
+- See Phase 1, Local. Multiple local repos merge into one deck.
 
-1. **Search Mercaso for the repo** the user means:
+### REMOTE mode — Mercaso `master`
 
-   ```bash
-   gh search repos "<keywords>" --owner Mercaso --limit 20 --json name,description
-   # or browse the org: gh repo list Mercaso --limit 200 --json name,description
-   ```
+Two entries land here: (a) a **local repo not on master** — you already know its
+name from its `origin` remote, so go directly to `Mercaso/<name>`; (b) **cwd is
+not a repo** — the engineer describes the target in **natural language** ("最近一个
+月的 backend-delivery", "recap the checkout service"), so resolve it yourself:
 
-   - Exactly one clear match → use it.
-   - Several plausible matches → list them and ask which one.
-   - None → say so; don't invent a repo.
-   - Resolution is **locked to the `Mercaso` org**; never resolve to another owner.
-2. **Use the `master` branch** of the resolved repo (fall back to `main` only if
-   `master` doesn't exist).
-3. Mine + verify against a shallow clone (see Phase 1, Remote), then continue the
-   normal workflow. The deck lands in the cwd's `recap/` (§Output), never `/tmp`.
+```bash
+# (b) natural-language → repo, locked to the Mercaso org:
+gh search repos "<keywords>" --owner Mercaso --limit 20 --json name,description
+# or browse the org: gh repo list Mercaso --limit 200 --json name,description
+```
+
+- Exactly one clear match → use it. Several → list and ask. None → say so; don't
+  invent a repo. Resolution is **locked to `Mercaso`**; never another owner.
+- Always the `master` branch (fall back to `main` only if `master` is absent).
+- Mine + verify against a shallow clone (Phase 1, Remote). The deck lands in the
+  cwd's `recap/` (§Output), never `/tmp`.
 
 ## Phase 1 — Mine
 
-**Always mine the canonical branch, never a feature checkout.** Local clones may
-be parked on a dev branch; the recap must reflect what actually shipped.
+**Always mine `master`, never a feature checkout.** Per repo, route by the
+decision above.
 
-**Local mode** — per repo: fetch, resolve the default branch, log the `origin/`
-ref:
+**Local mode (clone is on `master`)** — confirm the branch, fetch, log `master`:
 
 ```bash
-git -C <repo> fetch --quiet origin
-# default branch via origin/HEAD; if unset, fall back to main then master:
-BR=$(git -C <repo> symbolic-ref --quiet --short refs/remotes/origin/HEAD | sed 's#^origin/##')
-git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h|%ad|%s" --date=short "origin/$BR" [-- <path>]
-git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h %s" --shortstat "origin/$BR" [-- <path>]  # size = feature vs fix signal
+[ "$(git -C <repo> rev-parse --abbrev-ref HEAD)" = master ] || echo "not on master → use REMOTE mode"
+git -C <repo> fetch --quiet origin master
+git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h|%ad|%s" --date=short origin/master [-- <path>]
+git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h %s" --shortstat origin/master [-- <path>]  # size = feature vs fix signal
 ```
 
-**Remote mode (Mercaso)** — for a repo resolved from natural language (cwd not a
-repo): shallow-clone the `master` branch of the window into a temp dir, so both
-the log **and** the code are available (Phase 2 needs real source). Mine `master`
-there, then clean up after the deck is built:
+(Log `origin/master` after the fetch so even an on-master clone reflects the
+latest pushed history, not a stale local tip.)
+
+**Remote mode (Mercaso `master`)** — both a local-repo-not-on-master and a
+not-a-repo target land here. Shallow-clone the `master` branch of the window into
+a temp dir so both the log **and** the code are available (Phase 2 needs real
+source). Mine `master`, then clean up after the deck is built:
 
 ```bash
 DIR=/tmp/product-recap/<repo>
@@ -103,8 +110,9 @@ git -C "$DIR" log --since="<start>" [--until="<end>"] --pretty=format:"%h %s" --
   with both ends ("April only", "2026.04.01–2026.05.01") — pass `--until` for the
   end. Whatever the actual window is, `<START>`/`<END>` in the output filename
   must match it (open-ended → `<END>` = today).
-- **Branch** — local mode defaults to `origin/HEAD` (overridable, e.g. a release
-  branch); remote Mercaso mode uses `master` (fall back to `main`).
+- **Branch** — always `master` (fall back to `main` only if `master` is absent).
+  A local clone is used only when it is on `master`; otherwise the canonical
+  `master` is read from the Mercaso remote.
 - **Tag every commit with the repo it came from** — Phase 2 needs to know which
   repo's code to read, and the deck merges across repos (see below).
 - **Sweep sibling repos.** Prompts, agent definitions, and CI pipelines often
@@ -221,7 +229,7 @@ hard-coded start slide leak into the real deck.
 
 | Mistake | Reality |
 |---|---|
-| Mining the current checkout | A clone may sit on a feature branch; fetch + log `origin/<default>` so the recap reflects what shipped |
+| Reading a local clone that isn't on `master` | Only mine a local clone when it's checked out on `master`; otherwise go to the Mercaso remote `master` (don't trust a dev-branch clone) |
 | Asking for a path when not in a repo | Outside a repo, resolve the repo from natural language against the Mercaso org and mine its `master`; only ask when the match is ambiguous |
 | Leaving the remote temp clone behind | After Phase 5, `rm -rf /tmp/product-recap/<repo>`; the deck lives in `<cwd>/recap/`, never `/tmp` |
 | Trusting commit messages for flow diagrams | Messages compress and mislead; verify in code (Phase 2) |
