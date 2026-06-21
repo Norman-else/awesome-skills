@@ -1,6 +1,6 @@
 ---
 name: product-recap
-description: Use when an engineer wants to turn one or more local repos' git history into a product-evolution story or HTML slide deck — for ANY repo, not just Navi. Run it from any directory (defaults to the current repo); name extra sibling repos to merge into one deck, optionally scope to a sub-path, and give a time window. Mines the canonical branch (origin/default, so a feature-branch checkout is fine), verifies flows in code, narrates for non-engineers, and builds a single-file HTML deck. Triggers on "summarize this repo's commits into a deck", "recap the changes under services/x last quarter", "make a slide deck of what shipped across these two repos", "product-recap".
+description: Use when an engineer wants to turn one or more repos' git history into a product-evolution story or HTML slide deck — for ANY repo, not just Navi. Run it from any directory. Inside a git repo it mines local clones (the current repo + any named siblings) on the canonical branch (origin/default, so a feature-branch checkout is fine); outside a repo it resolves the repo from natural language against the Mercaso GitHub org and mines its master branch. Merge sibling repos into one deck, optionally scope to a sub-path, give a time window (open-ended or a closed start–end range), verify flows in code, narrate for non-engineers, and build a single-file HTML deck. Triggers on "summarize this repo's commits into a deck", "recap the changes under services/x last quarter", "make a slide deck of what shipped across these two repos", "recap the Mercaso checkout service last month", "product-recap".
 ---
 
 # Product Recap — git history → product story → slide deck
@@ -25,7 +25,7 @@ Two iron rules:
 
 | Input | Default |
 |---|---|
-| Repo(s) | the current repo if cwd is a git work tree; else ask |
+| Repo(s) | local: the current repo if cwd is a git work tree; otherwise resolve from natural language against the `Mercaso` org |
 | Branch | `origin/<default-branch>` per repo (auto-detected; overridable) |
 | Window | past month; accepts a start (`--since`) **or a closed range** (`--since` + `--until`) |
 | Path scope | none (optional `-- <subpath>` per repo) |
@@ -35,22 +35,47 @@ Two iron rules:
 
 ## Running location & repo resolution
 
-Runs from **any directory** — there is no "must be inside a repo" gate. Resolve
-the repos to mine like this:
+Runs from **any directory**. How repos are resolved depends on whether cwd is a
+git work tree — there are two modes:
 
-- If **cwd is inside a git work tree**, that repo is the default repo to mine.
-- The engineer may name **additional** repo paths (and may name repos explicitly
-  even when cwd is not a repo).
-- Validate each resolved repo: `git -C <repo> rev-parse --is-inside-work-tree`
-  must print `true`; if one doesn't, stop and name which path failed.
-- If cwd is not a repo **and** no repo was named, ask which repo(s) to recap
-  rather than guessing.
+### Local mode — cwd is inside a git work tree
+
+- That repo is the default repo to mine.
+- The engineer may name **additional** local repo paths (merged into one deck).
+- Validate each: `git -C <repo> rev-parse --is-inside-work-tree` must print
+  `true`; if one doesn't, stop and name which path failed.
+- Mine each locally — fetch + `origin/<default-branch>` (see Phase 1, Local).
+
+### Remote mode — cwd is NOT a git work tree (Mercaso org)
+
+When you're not in a repo, the engineer describes the target in **natural
+language** ("最近一个月的 backend-delivery", "recap the checkout service"). Resolve
+it yourself against the **`Mercaso` GitHub org** and proceed — don't just ask for
+a path:
+
+1. **Search Mercaso for the repo** the user means:
+
+   ```bash
+   gh search repos "<keywords>" --owner Mercaso --limit 20 --json name,description
+   # or browse the org: gh repo list Mercaso --limit 200 --json name,description
+   ```
+
+   - Exactly one clear match → use it.
+   - Several plausible matches → list them and ask which one.
+   - None → say so; don't invent a repo.
+   - Resolution is **locked to the `Mercaso` org**; never resolve to another owner.
+2. **Use the `master` branch** of the resolved repo (fall back to `main` only if
+   `master` doesn't exist).
+3. Mine + verify against a shallow clone (see Phase 1, Remote), then continue the
+   normal workflow. The deck lands in the cwd's `recap/` (§Output), never `/tmp`.
 
 ## Phase 1 — Mine
 
-**Always mine the canonical branch, never the current checkout.** A local clone
-may be parked on a feature branch; the recap must reflect what actually shipped.
-Per repo: fetch, resolve the default branch, then log against the `origin/` ref.
+**Always mine the canonical branch, never a feature checkout.** Local clones may
+be parked on a dev branch; the recap must reflect what actually shipped.
+
+**Local mode** — per repo: fetch, resolve the default branch, log the `origin/`
+ref:
 
 ```bash
 git -C <repo> fetch --quiet origin
@@ -60,12 +85,26 @@ git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h|%ad|%s
 git -C <repo> log --since="<start>" [--until="<end>"] --pretty=format:"%h %s" --shortstat "origin/$BR" [-- <path>]  # size = feature vs fix signal
 ```
 
+**Remote mode (Mercaso)** — for a repo resolved from natural language (cwd not a
+repo): shallow-clone the `master` branch of the window into a temp dir, so both
+the log **and** the code are available (Phase 2 needs real source). Mine `master`
+there, then clean up after the deck is built:
+
+```bash
+DIR=/tmp/product-recap/<repo>
+gh repo clone "Mercaso/<repo>" "$DIR" -- --branch master --single-branch --shallow-since="<start>"
+git -C "$DIR" log --since="<start>" [--until="<end>"] --pretty=format:"%h|%ad|%s" --date=short master [-- <path>]
+git -C "$DIR" log --since="<start>" [--until="<end>"] --pretty=format:"%h %s" --shortstat master [-- <path>]
+# ... after Phase 5 verification: rm -rf "$DIR" (the deck lives in cwd/recap, not /tmp)
+```
+
 - **Window** — default is the past month (`--since` only, end = today). The user
   may give just a start ("since May 1", "last quarter") or a **closed range**
   with both ends ("April only", "2026.04.01–2026.05.01") — pass `--until` for the
   end. Whatever the actual window is, `<START>`/`<END>` in the output filename
   must match it (open-ended → `<END>` = today).
-- The branch is overridable (e.g. a release branch); default is `origin/HEAD`.
+- **Branch** — local mode defaults to `origin/HEAD` (overridable, e.g. a release
+  branch); remote Mercaso mode uses `master` (fall back to `main`).
 - **Tag every commit with the repo it came from** — Phase 2 needs to know which
   repo's code to read, and the deck merges across repos (see below).
 - **Sweep sibling repos.** Prompts, agent definitions, and CI pipelines often
@@ -147,7 +186,7 @@ Examples:
 ```
 ~/work/api/recap/api-recap_2026.05.01-2026.06.01.html        # run inside api repo
 ~/Infras/Navi/recap/navi-recap_2026.05.01-2026.06.01.html    # Navi + sibling repo, one deck
-~/reports/recap/billing-recap_2026.05.01-2026.06.01.html     # run from a non-repo dir
+~/reports/recap/billing-recap_2026.05.01-2026.06.01.html     # non-repo dir; repo resolved from NL against Mercaso
 ```
 
 Never leave the final deck in `/tmp` (temp verification copies only — see
@@ -183,6 +222,8 @@ hard-coded start slide leak into the real deck.
 | Mistake | Reality |
 |---|---|
 | Mining the current checkout | A clone may sit on a feature branch; fetch + log `origin/<default>` so the recap reflects what shipped |
+| Asking for a path when not in a repo | Outside a repo, resolve the repo from natural language against the Mercaso org and mine its `master`; only ask when the match is ambiguous |
+| Leaving the remote temp clone behind | After Phase 5, `rm -rf /tmp/product-recap/<repo>`; the deck lives in `<cwd>/recap/`, never `/tmp` |
 | Trusting commit messages for flow diagrams | Messages compress and mislead; verify in code (Phase 2) |
 | Only mining the main repo | Prompts/CI live in sibling repos; the recap silently misses whole features |
 | Sectioning the deck by repo | Merge by product theme; the audience sees products, not repository structure |
