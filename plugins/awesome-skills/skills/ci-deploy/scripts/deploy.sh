@@ -302,13 +302,31 @@ case "$DETECT_RC" in
   *)  echo "$DETECT_OUT" >&2; exit "${DETECT_RC:-4}" ;;
 esac
 
-# Parse the chain: TARGET_ENV plus a STAGES array of "env<TAB>gate<TAB>deploy".
+# Split an "env<TAB>gates<TAB>deploy" tuple into STAGE_ENV / STAGE_GATES /
+# STAGE_DEPLOY, PRESERVING an empty gates field. `IFS=$'\t' read` can't do this:
+# TAB is an IFS *whitespace* char, so read collapses a missing middle field (a
+# stage with no approval gate — e.g. an auto-deploy dev) and shifts the deploy-job
+# name into gates, leaving the deploy job blank, which then hangs the stage on an
+# empty job name. Manual prefix/suffix stripping keeps empty fields intact.
+split_stage() {
+  local t="$1"
+  STAGE_ENV="${t%%$'\t'*}";   t="${t#*$'\t'}"
+  STAGE_GATES="${t%%$'\t'*}"
+  STAGE_DEPLOY="${t#*$'\t'}"
+}
+
+# Parse the chain: TARGET_ENV plus a STAGES array of "env<TAB>gates<TAB>deploy".
+# Read raw lines and peel off KIND by hand (same TAB-is-whitespace reason as
+# split_stage) so a stage's empty gates field survives into the array.
 TARGET_ENV=""
 STAGES=()
-while IFS=$'\t' read -r KIND F1 F2 F3; do
+while IFS= read -r line; do
+  [[ -n "$line" ]] || continue
+  KIND="${line%%$'\t'*}"
+  REST="${line#*$'\t'}"
   case "$KIND" in
-    ENV)   TARGET_ENV="$F1" ;;
-    STAGE) STAGES+=("$F1"$'\t'"$F2"$'\t'"$F3") ;;
+    ENV)   TARGET_ENV="$REST" ;;
+    STAGE) STAGES+=("$REST") ;;   # "env<TAB>gates<TAB>deploy", empty gates kept
   esac
 done <<<"$DETECT_OUT"
 
@@ -322,13 +340,13 @@ fi
 if [[ ${#STAGES[@]} -gt 1 ]]; then
   PLAN=""
   for s in "${STAGES[@]}"; do
-    IFS=$'\t' read -r se _ _ <<<"$s"
-    PLAN="${PLAN:+$PLAN → }$se"
+    split_stage "$s"
+    PLAN="${PLAN:+$PLAN → }$STAGE_ENV"
   done
   echo "Cascade: $PLAN    (deploying $((${#STAGES[@]} - 1)) prerequisite env(s) before $TARGET_ENV)"
 else
-  IFS=$'\t' read -r se sg sd <<<"${STAGES[0]}"
-  echo "Env: $se    deploy job: $sd    approval gate(s): ${sg:-(none)}"
+  split_stage "${STAGES[0]}"
+  echo "Env: $STAGE_ENV    deploy job: $STAGE_DEPLOY    approval gate(s): ${STAGE_GATES:-(none)}"
 fi
 
 # ─── per-poll status extractor ────────────────────────────────────────────────
@@ -475,7 +493,10 @@ run_stage() {
 
 # ─── cascade: walk every stage from the earliest prerequisite to the target ───
 for s in "${STAGES[@]}"; do
-  IFS=$'\t' read -r ENV_NAME GATES_CSV DEPLOY_JOB <<<"$s"
+  split_stage "$s"
+  ENV_NAME="$STAGE_ENV"
+  GATES_CSV="$STAGE_GATES"
+  DEPLOY_JOB="$STAGE_DEPLOY"
   IFS=',' read -ra GATES <<<"$GATES_CSV"   # ordered approval gates for this stage
   if [[ ${#STAGES[@]} -gt 1 ]]; then
     echo "── Stage: $ENV_NAME ($DEPLOY_JOB, gates: ${GATES_CSV:-none}) ──"
