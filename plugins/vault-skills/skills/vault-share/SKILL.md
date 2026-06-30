@@ -1,23 +1,25 @@
 ---
 name: vault-share
-description: Securely send a Vault secret or dynamic database credential to a Slack user by private DM without exposing the secret content in chat. Use when Codex needs to share credentials from Vault with a teammate in Slack, especially for requests like "share secret X with Y", "DM the db creds to Alice", "send dev db to Norman", "process the latest DB credential request", or terse slash-style input such as "vault-share ENV TYPE TARGET USER" and "vault-share PATH USER".
+description: Securely send a Vault secret or dynamic database credential to a Slack user by private DM without exposing the secret content in chat. Use when Codex needs to share credentials from Vault with a teammate in Slack, especially for requests like "share secret X with Y", "DM the db creds to Alice", "send dev db to Norman", "process the latest DB credential request", "process the pending DB credential requests" (handles multiple unprocessed requests for different services/recipients, not just the newest), or terse slash-style input such as "vault-share ENV TYPE TARGET USER" and "vault-share PATH USER".
 ---
 
 # Vault Share
 
 ## Overview
 
-Use this skill to route a Vault secret directly to a Slack DM while keeping the secret out of the conversation. User-supplied requests are authoritative: when the current user prompt explicitly identifies the Vault target and Slack recipient, parse and execute that request directly without checking `database-credentials-ops`. Only check `database-credentials-ops` for the newest DB credential workflow request when the user asks to process the latest DB credential request, asks to check Slack, or does not provide enough request details to resolve the target and recipient. Use `mcp__mcp_vault__vault_login` first whenever the resolved request names an environment, or when the share tool reports that authentication is missing. Then use `mcp__mcp_vault__vault_share_secret` to send the secret. The response should confirm delivery status without printing secret material.
+Use this skill to route a Vault secret directly to a Slack DM while keeping the secret out of the conversation. User-supplied requests are authoritative: when the current user prompt explicitly identifies the Vault target and Slack recipient, parse and execute that request directly without checking `database-credentials-ops`. Only check `database-credentials-ops` when the user asks to process DB credential requests, asks to check Slack, or does not provide enough request details to resolve the target and recipient. Use `mcp__mcp_vault__vault_login` first whenever the resolved request names an environment, or when the share tool reports that authentication is missing. Then use `mcp__mcp_vault__vault_share_secret` to send the secret. The response should confirm delivery status without printing secret material.
 
-When this skill is invoked with no extra user-provided target, recipient, or path, treat the invocation itself as a request to process the latest unprocessed DB credential workflow request from `database-credentials-ops`. Do not ask the user to provide a one-line request first.
+When the user asks to process Slack DB requests, there may be MORE THAN ONE unprocessed request for different services or recipients. Always enumerate the full set of unprocessed requests via `mcp__mcp_vault__vault_get_pending_db_credential_requests` instead of handling only the newest one. The dedicated tool returns a deduplicated list (collapsing repeated requests for the same environment + service + recipient) split into fresh `pending_requests` and older `stale_requests`. Process the fresh ones after confirming the batch with the operator; treat stale ones individually with explicit per-item confirmation.
+
+When this skill is invoked with no extra user-provided target, recipient, or path, treat the invocation itself as a request to process ALL unprocessed DB credential workflow requests from `database-credentials-ops`. Do not ask the user to provide a one-line request first.
 
 ## Workflow
 
 1. Parse the current user prompt first.
 2. If the prompt explicitly resolves the Vault target and Slack recipient with high confidence, skip Slack DB request preflight and use the user-provided request as the resolved input.
 3. If the invocation has no explicit target and recipient, immediately run the Slack DB request preflight in `database-credentials-ops`; do not ask for shorthand examples first.
-4. Run the Slack DB request preflight in `database-credentials-ops` when the user asks to process the latest DB credential request, asks to check Slack, or leaves the Vault target or Slack recipient unresolved.
-5. Extract the Vault target and Slack recipient from the newest valid Slack workflow request only when preflight is required, then overlay any explicit user-supplied fields as intentional overrides.
+4. Run the Slack DB request preflight in `database-credentials-ops` when the user asks to process DB credential requests, asks to check Slack, or leaves the Vault target or Slack recipient unresolved.
+5. When preflight is required, enumerate ALL unprocessed requests, present them, process each fresh one, and overlay any explicit user-supplied fields as intentional overrides. Process the requests one at a time; never collapse multiple distinct services or recipients into a single share.
 6. Accept natural language, slash-style input, or terse positional input such as `dev db item-management-service Norman` when the user prompt or required Slack preflight does not provide every required field.
 7. If either the Vault path or Slack user is missing after combining available fields, ask only for the missing field.
 8. Normalize environment, secret type, mount, and path.
@@ -28,25 +30,36 @@ When this skill is invoked with no extra user-provided target, recipient, or pat
 
 ## Slack DB Request Preflight
 
-- Empty skill invocation means Slack DB request preflight. Do not respond with input examples before calling `mcp__mcp_vault__vault_get_latest_db_credential_request`.
-- Do not call `mcp__mcp_vault__vault_get_latest_db_credential_request` when the current user prompt already provides an explicit, high-confidence Vault target and Slack recipient.
-- Before any call to `mcp__mcp_vault__vault_login` or `mcp__mcp_vault__vault_share_secret` for a Slack-derived request, call `mcp__mcp_vault__vault_get_latest_db_credential_request` with `include_processed_status: true`.
+- Empty skill invocation means Slack DB request preflight. Do not respond with input examples before calling `mcp__mcp_vault__vault_get_pending_db_credential_requests`.
+- Do not call `mcp__mcp_vault__vault_get_pending_db_credential_requests` when the current user prompt already provides an explicit, high-confidence Vault target and Slack recipient for a single share.
+- Before any call to `mcp__mcp_vault__vault_login` or `mcp__mcp_vault__vault_share_secret` for a Slack-derived request, call `mcp__mcp_vault__vault_get_pending_db_credential_requests` with `include_stale: true`.
 - Never use Slack connector tools such as `slack_read_channel`, `slack_search_public_and_private`, `slack_search_public`, `slack_read_thread`, or channel search tools for this workflow. The dedicated Vault MCP tool is the privacy boundary: it reads Slack server-side and returns only structured fields, never raw Slack messages or credential values.
-- If `mcp__mcp_vault__vault_get_latest_db_credential_request` is unavailable, fails, or returns a permission error such as `missing_scope`, stop immediately and report that the dedicated Vault MCP preflight needs to be fixed. Do not fall back to Slack connector tools.
-- Treat the returned `request` object as the only source of Slack-derived fields. Use `database`, `environment`, `recipient`, `path`, and `status`; do not ask Slack directly for surrounding channel messages.
-- Treat a message as a DB credential workflow request only when it is directed at the current user and contains the request pattern `Please provide the DB credential to`, a `Database:` field, and an `Environment:` field.
-- Parse `Database:` as the database service name, parse `Environment:` as the Vault environment, and parse the Slack mention after `Please provide the DB credential to` as the recipient who should receive the credential.
-- Ignore the mention of the current user at the beginning of the workflow message; that user is the approver/operator, not the credential recipient.
+- If `mcp__mcp_vault__vault_get_pending_db_credential_requests` is unavailable, fails, or returns a permission error such as `missing_scope`, stop immediately and report that the dedicated Vault MCP preflight needs to be fixed. Do not fall back to Slack connector tools.
+- Treat the returned `pending_requests` and `stale_requests` arrays as the only source of Slack-derived fields. For each request use `database`, `environment`, `recipient`, `path`, `status`, `age`, and `duplicate_count`; do not ask Slack directly for surrounding channel messages.
+- The tool already deduplicates: requests sharing the same environment + service + recipient are collapsed to the newest one with `duplicate_count` showing how many were merged. Treat each returned entry as a single unit of work; do not re-send for the merged duplicates.
 - For DB workflow requests, set `secret_type: db` and map the database service to `path: database/creds/SERVICE`.
 - Preserve the source Slack message timestamp or link internally for confidence checks, but do not include it in the Vault share payload unless a tool explicitly needs it.
-- Before calling any Vault tool, use the `status` returned by `mcp__mcp_vault__vault_get_latest_db_credential_request`. If the latest request was fetched without status, call `mcp__mcp_vault__vault_get_db_credential_request_status` with the request's `channel_id`, `request_ts`, `environment`, and `recipient.id`.
-- Treat a request as already handled when the dedicated status tool returns `already_processed: true` with `confidence: high`. The status tool may inspect notification messages containing credential material, but it must not return those values to the AI.
-- If the newest matching request has already been handled, stop immediately and report that the latest request in `database-credentials-ops` was already processed. Do not call `mcp__mcp_vault__vault_login` or `mcp__mcp_vault__vault_share_secret`.
-- Do not automatically skip past an already handled newest request to process an older request unless the user explicitly asks for the next unprocessed request.
-- If no matching request is found, continue using the user's explicit request. If the user asked to process the latest request and none is found, stop and say no matching DB credential request was found in `database-credentials-ops`.
-- If the newest matching request is ambiguous, missing a database, missing an environment, missing the recipient mention, or names an unsupported environment, do not call Vault. Ask for the missing or conflicting field.
-- If the request appears possibly handled but the notification match is not high confidence, ask for confirmation before sending anything.
-- If the Slack preflight request conflicts with explicit fields in the user's current prompt, prefer the explicit prompt only when it is clearly an override; otherwise ask for confirmation before sending anything.
+
+### Handling multiple requests
+
+- The tool returns the full list. Enumerate it; never silently process only the newest entry.
+- When there are one or more fresh `pending_requests`, present a brief numbered summary (environment / service / recipient, and a duplicate note when `duplicate_count` > 1) and confirm the batch with the operator, then process the fresh requests one at a time: log into each distinct environment once, then call `mcp__mcp_vault__vault_share_secret` per request. Reuse a single login per environment across requests that share it.
+- If the user explicitly asks to process only the latest/newest request, process just the first entry of `pending_requests` (the list is newest-first) and leave the rest.
+- Process each request independently. Two requests for different services or recipients must each get their own `mcp__mcp_vault__vault_share_secret` call; never merge them.
+- After processing the fresh batch, report a per-request result list (succeeded / skipped / failed) without printing any secret material.
+
+### Stale and already-processed requests
+
+- Requests in `stale_requests` are older than the fresh window (`age.tier` is `stale`). Never include them in the auto-processed batch. List them separately and process a stale request only after the operator explicitly confirms that specific one.
+- The tool omits requests already handled with high confidence. A returned request whose `status.already_processed` is `true` (i.e. `possibly_processed`) means the match was only medium confidence — do not send it automatically; ask the operator to confirm before sharing.
+- If `pending_requests` and `stale_requests` are both empty, report that no unprocessed DB credential request was found in `database-credentials-ops`. Do not call `mcp__mcp_vault__vault_login` or `mcp__mcp_vault__vault_share_secret`.
+
+### Per-request validation
+
+- Before any single share, if you need to re-check one request in isolation, call `mcp__mcp_vault__vault_get_db_credential_request_status` with that request's `channel_id`, `request_ts`, `environment`, `recipient.id`, and `database` (pass `database` so the check does not confuse a different service sent to the same recipient).
+- If a request is ambiguous, missing a database, missing an environment, missing the recipient mention, or names an unsupported environment, do not call Vault for that one. Ask for the missing or conflicting field while still processing the others.
+- If a request appears possibly handled but the notification match is not high confidence, ask for confirmation before sending that one.
+- If the Slack preflight conflicts with explicit fields in the user's current prompt, prefer the explicit prompt only when it is clearly an override; otherwise ask for confirmation before sending anything.
 
 ## Parsing Rules
 
@@ -92,12 +105,18 @@ When this skill is invoked with no extra user-provided target, recipient, or pat
 
 ## Examples
 
+- User request: `process the DB credential requests` (or empty `vault-share` invocation)
+  Preflight calls `mcp__mcp_vault__vault_get_pending_db_credential_requests` and gets two fresh `pending_requests`: (1) `Database: item-management-service`, `Environment: prod`, recipient `@Hansen Huang`; (2) `Database: warehouse-management-service`, `Environment: dev`, recipient `@Norman`.
+  Action: present both, confirm the batch, then process each: `vault_login prod` + share `database/creds/item-management-service` to `Hansen Huang`, and `vault_login dev` + share `database/creds/warehouse-management-service` to `Norman`. Report a per-request result list.
+- User request: `process the DB credential requests`
+  Preflight returns `pending_requests` for `service-b` (dev → Alice) but the `already_processed` high-confidence match for `service-a` (dev → Alice) was already filtered out by the tool.
+  Action: process only `service-b`; do not resend `service-a`. The service-aware status check keeps the two distinct.
+- User request: `process the DB credential requests`
+  Preflight returns an empty `pending_requests` and two entries in `stale_requests` (each `age.tier: stale`).
+  Action: do not auto-process. List the two stale requests and ask the operator to confirm each one individually before sharing.
 - User request: `process the latest DB credential request`
-  Slack preflight finds a `database-credentials-ops` workflow message directed at the current user: `Please provide the DB credential to @Hansen Huang`, `Database: item-management-service`, `Environment: prod`.
-  Action: call `mcp__mcp_vault__vault_login` with `environment: prod`, then call `mcp__mcp_vault__vault_share_secret` with `secret_type: db`, `path: database/creds/item-management-service`, `slack_user: Hansen Huang`.
-- User request: `process the latest DB credential request`
-  Slack preflight finds the newest matching request, then finds a later Vault notification that database credentials were sent to the same recipient for the same environment by the current user.
-  Action: stop and report that the latest request was already processed. Do not call any Vault tool.
+  Preflight returns several `pending_requests`.
+  Action: process only the first (newest) entry and leave the rest, since the user asked for the latest specifically.
 - User request: `dev db item-management-service Norman`
   Action: call `mcp__mcp_vault__vault_login` with `environment: dev`, then call `mcp__mcp_vault__vault_share_secret` with `secret_type: db`, `path: database/creds/item-management-service`, `slack_user: Norman`.
 - User request: `Norman dev db item-management-service`
