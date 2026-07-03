@@ -88,10 +88,19 @@ $text = [System.Text.Encoding]::UTF8.GetString(
 
 Create a dedicated feature branch remotely from the base branch commit SHA.
 
-Suggested naming:
+Suggested naming — derive the prefix from the agent executing this skill:
 
-- `codex/<short-task-slug>`
+- If you are Codex: `codex/<short-task-slug>`
+- If you are Claude (Claude Code / Cowork): `claude/<short-task-slug>`
+- Any other agent: use its lowercase name as the prefix
 - include a date suffix when collision risk is high
+
+If uncertain about which agent you are, confirm via shell env before creating
+the branch (e.g. Claude Code sets `CLAUDECODE=1`):
+
+```bash
+[ -n "$CLAUDECODE" ] && echo claude || echo codex
+```
 
 Example:
 
