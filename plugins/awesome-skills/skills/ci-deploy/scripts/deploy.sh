@@ -309,6 +309,18 @@ fi
 
 echo "Triggered by: $TRIGGER_ACTOR    Commit: ${OWN_SHA:0:7} — ${COMMIT_SUBJECT:-}"
 [[ -n "$CHANGED_SVCS" ]] && echo "Changed services: ${CHANGED_SVCS//,/, }"
+# Full commit message (subject + body) for context.
+_commit_msg=""
+if [[ -n "$_GH_BIN" && "$OWN_SHA" != "-" ]]; then
+  _commit_msg=$("$_GH_BIN" api "repos/${PROJECT_SLUG#*/}/commits/$OWN_SHA" --jq '.commit.message' 2>/dev/null || true)
+fi
+if [[ -z "$_commit_msg" && "$OWN_SHA" != "-" && -z "$REPO_ARG" ]]; then
+  _commit_msg=$(git show -s --format=%B "$OWN_SHA" 2>/dev/null || true)
+fi
+if [[ -n "${_commit_msg//[[:space:]]/}" ]]; then
+  echo "Commit message:"
+  printf '%s\n' "$_commit_msg" | sed 's/^/  /'
+fi
 
 CURRENT_USER="-"
 [[ -n "$_GH_BIN" ]] && CURRENT_USER=$("$_GH_BIN" api user -q .login 2>/dev/null || echo "-")
