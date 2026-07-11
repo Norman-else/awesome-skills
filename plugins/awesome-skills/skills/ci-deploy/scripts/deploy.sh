@@ -31,6 +31,8 @@
 #                          unless --sha is given, the latest commit that changed the
 #                          service's path. Per-repo overrides: .claude/ci-deploy.json.
 #   --service-path <glob>  Override the service's source path (default services/<svc>).
+#   --yes                  Skip the confirmation gate when the target commit was
+#                          authored by someone other than the current user (exit 12).
 #   --test-job <name>      Restrict the "build failed" check to this one job.
 #   --rerun                Rerun the matched workflow from the START before
 #                          watching. Cancels the current run first (CircleCI only
@@ -61,6 +63,7 @@ REPO_ARG=""
 BRANCH_ARG=""
 SERVICE_ARG=""
 SERVICE_PATH_ARG=""
+ASSUME_YES="${CI_DEPLOY_YES:-}"
 RERUN_MODE=""          # "" | "from-start" | "from-failed"
 
 while [[ $# -gt 0 ]]; do
@@ -73,6 +76,7 @@ while [[ $# -gt 0 ]]; do
     --approval-job) APPROVAL_OVERRIDE="${2:-}"; shift 2 ;;
     --service)      SERVICE_ARG="${2:-}"; shift 2 ;;
     --service-path) SERVICE_PATH_ARG="${2:-}"; shift 2 ;;
+    --yes)          ASSUME_YES=1; shift ;;
     --test-job)     TEST_OVERRIDE="${2:-}"; shift 2 ;;
     --rerun)             RERUN_MODE="from-start"; shift ;;
     --rerun-from-failed) RERUN_MODE="from-failed"; shift ;;
@@ -267,6 +271,58 @@ if [[ -z "$PIPELINE_ID" ]]; then
   exit 3
 fi
 echo "Pipeline: $PIPELINE_ID"
+
+# ─── ownership summary + foreign-commit gate ──────────────────────────────────
+# Show who triggered/authored the target pipeline and (for monorepos) which
+# services its commit changed, so a deploy is never approved blind. The run-*-build
+# parameter VALUES are not exposed by the CircleCI API, so changed services are
+# derived from the commit's services/<name>/ paths — exactly what path-filtering
+# keys off. If the commit author is not the current user and --yes was not given,
+# stop with exit 12 so the caller can confirm.
+_GH_BIN=""
+command -v gh >/dev/null 2>&1 && _GH_BIN=gh
+[[ -z "$_GH_BIN" && -x "$HOME/bin/gh" ]] && _GH_BIN="$HOME/bin/gh"
+
+read -r TRIGGER_ACTOR OWN_SHA COMMIT_SUBJECT < <(cc_get "https://circleci.com/api/v2/pipeline/$PIPELINE_ID" \
+  | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+actor = ((d.get('trigger') or {}).get('actor') or {}).get('login') or '-'
+rev = (d.get('vcs') or {}).get('revision', '') or '-'
+subj = ((d.get('vcs') or {}).get('commit') or {}).get('subject', '') or '-'
+print(actor, rev, subj.replace(chr(10), ' ').replace(chr(13), ' '))
+" | tr -d '\r')
+[[ -z "${TRIGGER_ACTOR:-}" ]] && TRIGGER_ACTOR="-"
+[[ -z "${OWN_SHA:-}" ]] && OWN_SHA="-"
+
+COMMIT_AUTHOR="-"; CHANGED_SVCS=""
+if [[ "$OWN_SHA" != "-" && -n "$_GH_BIN" ]]; then
+  read -r COMMIT_AUTHOR CHANGED_SVCS < <("$_GH_BIN" api "repos/${PROJECT_SLUG#*/}/commits/$OWN_SHA" \
+      --jq '[(.author.login // "-"), ([ (.files // [])[].filename | select(test("^services/[^/]+/")) | capture("^services/(?<s>[^/]+)/").s ] | unique | join(","))] | @tsv' 2>/dev/null | tr '\t' ' ')
+  [[ -z "${COMMIT_AUTHOR:-}" ]] && COMMIT_AUTHOR="-"
+fi
+# Local fallback for changed services (author stays '-' if gh is unavailable).
+if [[ -z "$CHANGED_SVCS" && "$OWN_SHA" != "-" && -z "$REPO_ARG" ]]; then
+  CHANGED_SVCS=$(git show --name-only --format= "$OWN_SHA" 2>/dev/null \
+    | sed -n 's#^services/\([^/]*\)/.*#\1#p' | sort -u | paste -sd, - || true)
+fi
+
+echo "Triggered by: $TRIGGER_ACTOR    Commit: ${OWN_SHA:0:7} — ${COMMIT_SUBJECT:-}"
+[[ -n "$CHANGED_SVCS" ]] && echo "Changed services: ${CHANGED_SVCS//,/, }"
+
+CURRENT_USER="-"
+[[ -n "$_GH_BIN" ]] && CURRENT_USER=$("$_GH_BIN" api user -q .login 2>/dev/null || echo "-")
+if [[ "$COMMIT_AUTHOR" != "-" && "$CURRENT_USER" != "-" && "$COMMIT_AUTHOR" != "$CURRENT_USER" ]]; then
+  if [[ -z "$ASSUME_YES" ]]; then
+    echo "error: target commit ${OWN_SHA:0:7} was authored by '$COMMIT_AUTHOR', not you ('$CURRENT_USER')." >&2
+    echo "  It changed: ${CHANGED_SVCS:-(no services/ paths)}." >&2
+    echo "  Confirm this is intended, then re-run the same command with --yes." >&2
+    exit 12
+  fi
+  echo "Commit author: $COMMIT_AUTHOR (NOT you — proceeding, --yes given)."
+elif [[ "$COMMIT_AUTHOR" != "-" ]]; then
+  echo "Commit author: $COMMIT_AUTHOR (you)."
+fi
 
 # ─── choose the workflow (the one that contains a deploy job) ─────────────────
 # A pipeline usually has one workflow. When there are several, we pick the one

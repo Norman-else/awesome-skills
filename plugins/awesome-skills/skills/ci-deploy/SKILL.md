@@ -120,6 +120,7 @@ deploy.sh <env> --deploy-job <name>     # explicit deploy job (resolves exit-9 a
 deploy.sh <env> --approval-job <name>   # explicit approval gate
 deploy.sh <env> --service <name>        # monorepo: deploy ONE service (see Monorepo service mode)
 deploy.sh <env> --service-path <glob>   # override the service's source path (default services/<name>)
+deploy.sh <env> --yes                   # skip the foreign-commit confirmation gate (exit 12)
 deploy.sh <env> --test-job <name>       # restrict the "build failed" check to one job
 deploy.sh <env> --rerun                 # cancel + rerun the workflow from START, then watch the fresh run
 deploy.sh <env> --rerun-from-failed     # cancel + rerun only failed jobs + downstream, then watch
@@ -128,6 +129,21 @@ deploy.sh <env> --rerun-from-failed     # cancel + rerun only failed jobs + down
 The path above assumes the skill is installed into a project's `.claude/skills/`.
 When run from the plugin cache, use the script's own absolute path — the script
 resolves its sibling `detect.py` relative to itself either way.
+
+## Ownership check (exit 12)
+
+Before deploying, the script prints an **ownership summary** for the resolved
+pipeline: who triggered it, the commit author + subject, and — for monorepos —
+which services the commit changed. (The `run-*-build` parameter *values* are not
+exposed by the CircleCI API, so changed services are derived from the commit's
+`services/<name>/` paths, which is exactly what path-filtering keys off; a
+non-monorepo simply has no such paths and shows none.)
+
+If the target commit's author is **not the current user** and `--yes` was not
+passed, the script stops with **exit 12**. On exit 12: show the user the
+triggered-by actor, the commit subject, and the changed services, and ask them to
+confirm. Only after they approve, re-run the exact same command with `--yes`
+appended. Never pass `--yes` pre-emptively.
 
 ## Monorepo service mode (--service)
 
@@ -410,6 +426,7 @@ on the fresh run and reports success or the next failure.
 | 9 | ambiguous detection | Re-run with explicit `--deploy-job`/`--approval-job`/`--workflow` |
 | 10 | multiple deploy environments, none chosen | Ask the user which env, re-run with it |
 | 11 | deploy job halted (no-op) — service not built in this pipeline | Not a real deploy; target the pipeline of the commit that changed the service, or `CI_DEPLOY_HALT_CHECK=0` to bypass |
+| 12 | target commit authored by someone else (needs confirmation) | Show author + changed services; re-run with `--yes` once the user confirms |
 
 ## Requirements
 
