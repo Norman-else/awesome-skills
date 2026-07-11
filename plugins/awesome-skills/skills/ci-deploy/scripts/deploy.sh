@@ -26,6 +26,11 @@
 #   --workflow <name-or-id>  Pin the workflow when a pipeline has several.
 #   --deploy-job <name>    Explicit deploy job (used when detection is ambiguous).
 #   --approval-job <name>  Explicit approval gate job.
+#   --service <name>       Monorepo mode — deploy ONE service. Resolves the deploy
+#                          job (deploy_<svc>_<env>), gate (hold_<svc>_<env>) and,
+#                          unless --sha is given, the latest commit that changed the
+#                          service's path. Per-repo overrides: .claude/ci-deploy.json.
+#   --service-path <glob>  Override the service's source path (default services/<svc>).
 #   --test-job <name>      Restrict the "build failed" check to this one job.
 #   --rerun                Rerun the matched workflow from the START before
 #                          watching. Cancels the current run first (CircleCI only
@@ -54,6 +59,8 @@ APPROVAL_OVERRIDE=""
 TEST_OVERRIDE=""
 REPO_ARG=""
 BRANCH_ARG=""
+SERVICE_ARG=""
+SERVICE_PATH_ARG=""
 RERUN_MODE=""          # "" | "from-start" | "from-failed"
 
 while [[ $# -gt 0 ]]; do
@@ -64,6 +71,8 @@ while [[ $# -gt 0 ]]; do
     --workflow)     WORKFLOW_NAME="${2:-}"; shift 2 ;;
     --deploy-job)   DEPLOY_OVERRIDE="${2:-}"; shift 2 ;;
     --approval-job) APPROVAL_OVERRIDE="${2:-}"; shift 2 ;;
+    --service)      SERVICE_ARG="${2:-}"; shift 2 ;;
+    --service-path) SERVICE_PATH_ARG="${2:-}"; shift 2 ;;
     --test-job)     TEST_OVERRIDE="${2:-}"; shift 2 ;;
     --rerun)             RERUN_MODE="from-start"; shift ;;
     --rerun-from-failed) RERUN_MODE="from-failed"; shift ;;
@@ -131,6 +140,65 @@ elif [[ -n "$REPO_ARG" ]]; then
   BRANCH="master"
 else
   BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | tr -d '\r' || echo HEAD)
+fi
+
+# ─── monorepo service mode ────────────────────────────────────────────────────
+# `--service X` deploys one service inside a monorepo: it maps the service to its
+# source path and its deploy/approval job names (from an optional repo config file,
+# or by convention), and — unless --sha is given — targets the pipeline of the
+# latest commit on the branch that changed that path. This picks the path-filtered
+# pipeline that actually BUILT the service, instead of the branch tip (whose deploy
+# job for a non-modified service would halt into a no-op, now caught as exit 11).
+if [[ -n "$SERVICE_ARG" ]]; then
+  if [[ -z "$ENV_NAME" ]]; then
+    echo "error: --service requires an environment, e.g. 'deploy.sh sat --service $SERVICE_ARG'." >&2
+    exit 1
+  fi
+  # Optional per-repo config: .claude/ci-deploy.json (local: working tree; remote:
+  # fetched via gh). Templates use {service} and {env}.
+  CFG_JSON=""
+  if [[ -n "$REPO_ARG" ]]; then
+    CFG_JSON=$(gh api "repos/${PROJECT_SLUG#*/}/contents/.claude/ci-deploy.json?ref=$BRANCH" \
+                 --jq '.content' 2>/dev/null | base64 -d 2>/dev/null || true)
+  else
+    _root=$(git rev-parse --show-toplevel 2>/dev/null || echo .)
+    [[ -f "$_root/.claude/ci-deploy.json" ]] && CFG_JSON=$(cat "$_root/.claude/ci-deploy.json")
+  fi
+  read -r SVC_PATH DEPLOY_TMPL APPROVAL_TMPL < <(
+    SERVICE="$SERVICE_ARG" ENV_NAME="$ENV_NAME" CFG_JSON="$CFG_JSON" \
+    SERVICE_PATH_ARG="$SERVICE_PATH_ARG" python3 -c "
+import json, os
+svc = os.environ['SERVICE']; env = os.environ['ENV_NAME']
+raw = os.environ.get('CFG_JSON', '').strip()
+cfg = {}
+if raw:
+    try: cfg = json.loads(raw)
+    except Exception: cfg = {}
+def tmpl(v, d): return (v or d).replace('{service}', svc).replace('{env}', env)
+path = os.environ.get('SERVICE_PATH_ARG') or tmpl(cfg.get('service_path'), 'services/{service}')
+print(path, tmpl(cfg.get('deploy_job'), 'deploy_{service}_{env}'), tmpl(cfg.get('approval_job'), 'hold_{service}_{env}'))
+")
+  [[ -z "$DEPLOY_OVERRIDE" ]]   && DEPLOY_OVERRIDE="$DEPLOY_TMPL"
+  [[ -z "$APPROVAL_OVERRIDE" ]] && APPROVAL_OVERRIDE="$APPROVAL_TMPL"
+  echo "Service: $SERVICE_ARG    path: $SVC_PATH    deploy: $DEPLOY_OVERRIDE    gate: $APPROVAL_OVERRIDE"
+  # Target the latest commit on the branch that changed the service's path.
+  if [[ -z "$TARGET_SHA_ARG" ]]; then
+    if [[ -n "$REPO_ARG" ]]; then
+      TARGET_SHA_ARG=$(gh api "repos/${PROJECT_SLUG#*/}/commits?sha=$BRANCH&path=$SVC_PATH&per_page=1" \
+                        --jq '.[0].sha' 2>/dev/null | tr -d '\r' || true)
+    else
+      git fetch origin "$BRANCH" --quiet 2>/dev/null || true
+      TARGET_SHA_ARG=$(git log -n1 --format=%H "origin/$BRANCH" -- "$SVC_PATH" 2>/dev/null \
+                        || git log -n1 --format=%H "$BRANCH" -- "$SVC_PATH" 2>/dev/null || true)
+      TARGET_SHA_ARG="$(printf '%s' "$TARGET_SHA_ARG" | tr -d '\r')"
+    fi
+    if [[ -z "$TARGET_SHA_ARG" ]]; then
+      echo "error: no commit on '$BRANCH' changed '$SVC_PATH' — can't find a pipeline that built $SERVICE_ARG." >&2
+      echo "  Check the path (--service-path) or pass --sha explicitly." >&2
+      exit 3
+    fi
+    echo "Resolved $SERVICE_ARG -> latest change ${TARGET_SHA_ARG:0:7} on $BRANCH (path: $SVC_PATH)."
+  fi
 fi
 
 # Target SHA: explicit flag wins. In remote mode without --sha we leave it empty

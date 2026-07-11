@@ -118,6 +118,8 @@ deploy.sh <env> --sha <commit>          # target a specific commit instead of th
 deploy.sh <env> --workflow <name-or-id>  # pin the workflow when a pipeline has several
 deploy.sh <env> --deploy-job <name>     # explicit deploy job (resolves exit-9 ambiguity)
 deploy.sh <env> --approval-job <name>   # explicit approval gate
+deploy.sh <env> --service <name>        # monorepo: deploy ONE service (see Monorepo service mode)
+deploy.sh <env> --service-path <glob>   # override the service's source path (default services/<name>)
 deploy.sh <env> --test-job <name>       # restrict the "build failed" check to one job
 deploy.sh <env> --rerun                 # cancel + rerun the workflow from START, then watch the fresh run
 deploy.sh <env> --rerun-from-failed     # cancel + rerun only failed jobs + downstream, then watch
@@ -126,6 +128,50 @@ deploy.sh <env> --rerun-from-failed     # cancel + rerun only failed jobs + down
 The path above assumes the skill is installed into a project's `.claude/skills/`.
 When run from the plugin cache, use the script's own absolute path — the script
 resolves its sibling `detect.py` relative to itself either way.
+
+## Monorepo service mode (--service)
+
+Some repos are **monorepos** that build and deploy several services from one
+path-filtered CircleCI pipeline — each service is (re)built only when its own files
+change. `accounting-service`, `item-management-service`, … are *services inside*
+`premier-store-os`, **not** standalone repos. For these:
+
+- Do **not** `gh search repos` for the service name — it is not a repo.
+- Do **not** target the branch tip. A tip pipeline that changed a *different*
+  service halts this service's deploy job into a green no-op (now caught as exit 11).
+
+Name the service with `--service` instead:
+
+```bash
+# from inside the monorepo clone
+deploy.sh sat --service accounting-service
+# or without a clone
+deploy.sh sat --repo Mercaso/premier-store-os --service accounting-service
+```
+
+`--service X` resolves:
+
+1. **Jobs** — `deploy_<X>_<env>` and gate `hold_<X>_<env>` by convention (override
+   with `--deploy-job` / `--approval-job`, or the per-repo config below). Requires
+   an environment argument.
+2. **Target commit** — unless `--sha` is given, the latest commit on the branch that
+   changed the service's path (`services/<X>/` by default, or `--service-path`), so
+   the pipeline that actually built the service is chosen.
+
+### Optional per-repo config
+
+Drop `.claude/ci-deploy.json` in the monorepo root to declare a non-default layout
+(templates use `{service}` and `{env}`):
+
+```json
+{
+  "service_path": "services/{service}",
+  "deploy_job": "deploy_{service}_{env}",
+  "approval_job": "hold_{service}_{env}"
+}
+```
+
+The defaults above already match `premier-store-os`, so the file is optional there.
 
 ## Deploying a repo you haven't cloned (remote mode)
 
