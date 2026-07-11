@@ -154,22 +154,44 @@ fi
 echo "Branch: $BRANCH    Target commit: $SHORT_SHA"
 
 # ─── find pipeline for SHA ────────────────────────────────────────────────────
-PIPELINE_ID=$(cc_get "https://circleci.com/api/v2/project/$PROJECT_SLUG/pipeline?branch=$BRANCH" \
-  | TARGET_SHA="$TARGET_SHA" python3 -c "
+# Resolve a short/abbreviated --sha to the full 40-char revision when a local
+# clone is present (CircleCI stores the full revision, so a bare short SHA never
+# matches by equality). Remote mode has no clone; the prefix match below covers it.
+if [[ -n "$TARGET_SHA" && -z "$REPO_ARG" ]]; then
+  _full_sha=$(git rev-parse "$TARGET_SHA" 2>/dev/null | tr -d '\r' || true)
+  [[ -n "$_full_sha" ]] && TARGET_SHA="$_full_sha"
+fi
+
+# CircleCI returns pipelines newest-first, ~20 per page. Walk pages until the
+# pipeline whose revision matches the target (exact OR prefix, so short SHAs
+# resolve) is found, or the history is exhausted (cap ~15 pages ≈ 300 pipelines).
+# Without a target SHA we take the newest pipeline on the branch.
+PIPELINE_ID=""
+_page_token=""
+for _pg in $(seq 1 15); do
+  _pipe_url="https://circleci.com/api/v2/project/$PROJECT_SLUG/pipeline?branch=$BRANCH"
+  [[ -n "$_page_token" ]] && _pipe_url="${_pipe_url}&page-token=${_page_token}"
+  read -r PIPELINE_ID _page_token < <(cc_get "$_pipe_url" \
+    | TARGET_SHA="$TARGET_SHA" python3 -c "
 import json, os, sys
 target = os.environ['TARGET_SHA']
 data = json.load(sys.stdin)
 items = data.get('items', [])
-# No target SHA (remote mode without --sha): take the latest pipeline on the
-# branch — CircleCI returns items newest-first.
+nxt = data.get('next_page_token') or '-'
 if not target:
-    if items:
-        print(items[0]['id'])
-    sys.exit(0)
+    print((items[0]['id'] if items else '-'), '-'); sys.exit(0)
 for p in items:
-    if p.get('vcs', {}).get('revision', '') == target:
-        print(p['id']); sys.exit(0)
+    rev = p.get('vcs', {}).get('revision', '') or ''
+    if rev == target or rev.startswith(target):
+        print(p['id'], '-'); sys.exit(0)
+print('-', nxt)
 " | tr -d '\r')
+  [[ "$PIPELINE_ID" == "-" ]] && PIPELINE_ID=""
+  [[ "$_page_token" == "-" ]] && _page_token=""
+  [[ -n "$PIPELINE_ID" ]] && break
+  [[ -z "$TARGET_SHA" ]] && break      # no-SHA case already resolved on page 1
+  [[ -z "$_page_token" ]] && break     # no more pages
+done
 if [[ -z "$PIPELINE_ID" ]]; then
   echo "error: no CircleCI pipeline found for $SHORT_SHA on '$BRANCH'." >&2
   echo "Hint: CI may not have picked up the commit yet. Try again in a minute, or check" >&2
@@ -383,7 +405,42 @@ print('%s\t%s\t%s\t%s' % (test_fail, hold, hold_id, dep))
 "
 }
 
-# Poll the deploy job until terminal. 0 success, 6 failure, 8 timeout.
+# ─── no-op / halt detection ─────────────────────────────────────────────
+# A CircleCI job that runs `circleci-agent step halt` finishes as *success* while
+# doing nothing. This is common in path-filtered monorepos: a service's deploy job
+# is present in every pipeline's matrix but halts (right after its precondition
+# step) in any pipeline that did not build that service. Such a no-op is
+# indistinguishable from a real deploy by status alone, but it runs only a couple
+# of setup steps in a fraction of the time. deploy_looks_real() returns 0 (real)
+# or 1 (looks halted). Tunables: CI_DEPLOY_HALT_CHECK=0 disables it entirely;
+# CI_DEPLOY_HALT_MAX_STEPS (default 4) and CI_DEPLOY_HALT_MAX_MS (default 90000)
+# set the thresholds.
+deploy_looks_real() {
+  [[ "${CI_DEPLOY_HALT_CHECK:-1}" == "0" ]] && return 0
+  local num
+  num=$(cc_get "https://circleci.com/api/v2/workflow/$WORKFLOW_ID/job" \
+    | DEPLOY_JOB="$DEPLOY_JOB" python3 -c "
+import json, os, sys
+d = json.load(sys.stdin)
+print(next((str(j.get('job_number','')) for j in d.get('items', []) if j.get('name') == os.environ['DEPLOY_JOB']), ''))
+" | tr -d '\r')
+  [[ -z "$num" ]] && return 0   # can't resolve the job number -> don't block
+  cc_get "https://circleci.com/api/v1.1/project/$PROJECT_SLUG/$num" \
+    | CI_DEPLOY_HALT_MAX_STEPS="${CI_DEPLOY_HALT_MAX_STEPS:-4}" \
+      CI_DEPLOY_HALT_MAX_MS="${CI_DEPLOY_HALT_MAX_MS:-90000}" python3 -c "
+import json, os, sys
+d = json.load(sys.stdin)
+steps = d.get('steps') or []
+ms = d.get('build_time_millis') or 0
+maxst = int(os.environ['CI_DEPLOY_HALT_MAX_STEPS'])
+maxms = int(os.environ['CI_DEPLOY_HALT_MAX_MS'])
+# A real deploy runs checkout + actual deploy steps, well beyond setup+precondition.
+# A halt truncates the job to only the early steps, quickly.
+sys.exit(1 if (len(steps) <= maxst and ms < maxms) else 0)
+"
+}
+
+# Poll the deploy job until terminal. 0 success, 6 failure, 8 timeout, 11 no-op halt.
 monitor_deploy() {
   echo "Monitoring $DEPLOY_JOB..."
   local j status
@@ -401,9 +458,18 @@ else:
     echo "[deploy poll $j] $DEPLOY_JOB=$status"
     case "$status" in
       success)
-        echo "$DEPLOY_JOB succeeded for $SHORT_SHA ($ENV_NAME)."
-        echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID"
-        return 0 ;;
+        if deploy_looks_real; then
+          echo "$DEPLOY_JOB succeeded for $SHORT_SHA ($ENV_NAME)."
+          echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID"
+          return 0
+        fi
+        echo "error: $DEPLOY_JOB reported 'success' but appears to have HALTED early (no-op)." >&2
+        echo "  It ran only setup/precondition steps — nothing was actually deployed." >&2
+        echo "  In a path-filtered monorepo this means the service was NOT built in this pipeline;" >&2
+        echo "  target the pipeline of the commit that changed the service (git log -- <path>)," >&2
+        echo "  or set CI_DEPLOY_HALT_CHECK=0 to bypass this check." >&2
+        echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
+        return 11 ;;
       failed|canceled|unauthorized|infrastructure_fail|timedout|terminated_unknown|errored|not_run)
         echo "error: $DEPLOY_JOB ended with status '$status'." >&2
         echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
@@ -451,8 +517,14 @@ run_stage() {
       # Deploy already terminal/running (re-run / already-deployed prerequisite).
       case "$DEPLOY_STATUS" in
         success)
-          echo "$DEPLOY_JOB already success — skipping ($ENV_NAME)."
-          return 0 ;;
+          if deploy_looks_real; then
+            echo "$DEPLOY_JOB already success — skipping ($ENV_NAME)."
+            return 0
+          fi
+          echo "error: $DEPLOY_JOB is 'success' but appears to have HALTED early (no-op) — nothing deployed." >&2
+          echo "  Target the pipeline where the service was actually built, or CI_DEPLOY_HALT_CHECK=0 to bypass." >&2
+          echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
+          return 11 ;;
         failed|canceled|unauthorized|infrastructure_fail|timedout|errored)
           echo "error: $DEPLOY_JOB is in terminal failure state '$DEPLOY_STATUS'." >&2
           echo "  https://app.circleci.com/pipelines/workflows/$WORKFLOW_ID" >&2
@@ -511,6 +583,8 @@ for s in "${STAGES[@]}"; do
     0) : ;;  # stage done, advance to the next
     6) echo "error: deploy failed at env '$ENV_NAME' — cascade stopped before ${TARGET_ENV}." >&2
        exit 6 ;;
+    11) echo "error: deploy at env '$ENV_NAME' halted (no-op) — nothing deployed; cascade stopped before ${TARGET_ENV}." >&2
+        exit 11 ;;
     *) exit "$STAGE_RC" ;;  # 5 / 7 / 8 already explained on stderr
   esac
 done

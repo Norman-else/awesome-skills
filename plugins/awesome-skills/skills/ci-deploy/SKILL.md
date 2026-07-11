@@ -363,6 +363,7 @@ on the fresh run and reports success or the next failure.
 | 8 | deploy job didn't finish within ~20 min | Check the workflow; job may be stuck |
 | 9 | ambiguous detection | Re-run with explicit `--deploy-job`/`--approval-job`/`--workflow` |
 | 10 | multiple deploy environments, none chosen | Ask the user which env, re-run with it |
+| 11 | deploy job halted (no-op) — service not built in this pipeline | Not a real deploy; target the pipeline of the commit that changed the service, or `CI_DEPLOY_HALT_CHECK=0` to bypass |
 
 ## Requirements
 
