@@ -139,9 +139,19 @@ exposed by the CircleCI API, so changed services are derived from the commit's
 `services/<name>/` paths, which is exactly what path-filtering keys off; a
 non-monorepo simply has no such paths and shows none.)
 
-If the target commit's author is **not the current user** and `--yes` was not
-passed, the script stops with **exit 12**. On exit 12: show the user the
-triggered-by actor, the commit subject, and the changed services, and ask them to
+**Confirmation gate.** The script compares the **service's latest workflow** (the
+target commit — the newest change to `services/<svc>/`) against **your most recent
+commit on the branch** (a commit maps 1:1 to a pipeline, so equal SHAs mean the same
+workflow). It requires confirmation (**exit 12**, bypass with `--yes`) when either:
+
+- the service's latest change is **not your last commit** (someone changed it after
+  you, or your last commit didn't touch this service); or
+- the target commit **didn't actually change the service** (deploying it would halt
+  into a no-op) — this check always runs.
+
+If the service's latest change *is* your last commit and it changed the service, it
+deploys directly. On exit 12: show the user the reasons (triggered-by actor, target
+commit + author, your last commit, changed services, commit message) and ask them to
 confirm. Only after they approve, re-run the exact same command with `--yes`
 appended. Never pass `--yes` pre-emptively.
 
@@ -426,7 +436,7 @@ on the fresh run and reports success or the next failure.
 | 9 | ambiguous detection | Re-run with explicit `--deploy-job`/`--approval-job`/`--workflow` |
 | 10 | multiple deploy environments, none chosen | Ask the user which env, re-run with it |
 | 11 | deploy job halted (no-op) — service not built in this pipeline | Not a real deploy; target the pipeline of the commit that changed the service, or `CI_DEPLOY_HALT_CHECK=0` to bypass |
-| 12 | target commit authored by someone else (needs confirmation) | Show author + changed services; re-run with `--yes` once the user confirms |
+| 12 | the service's latest change is not your last commit, or the target didn't change the service (needs confirmation) | Show the reasons; re-run with `--yes` once the user confirms |
 
 ## Requirements
 

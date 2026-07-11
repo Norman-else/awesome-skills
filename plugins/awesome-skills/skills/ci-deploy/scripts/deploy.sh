@@ -322,18 +322,53 @@ if [[ -n "${_commit_msg//[[:space:]]/}" ]]; then
   printf '%s\n' "$_commit_msg" | sed 's/^/  /'
 fi
 
+[[ "$COMMIT_AUTHOR" != "-" ]] && echo "Commit author: $COMMIT_AUTHOR"
+
+# ── which service is this deploy about? (for the "did it change the service" check) ──
+SVC="$SERVICE_ARG"
+if [[ -z "$SVC" && -n "$DEPLOY_OVERRIDE" && -n "$ENV_NAME" ]]; then
+  SVC="${DEPLOY_OVERRIDE#deploy[_-]}"        # strip leading deploy_ / deploy-
+  SVC="${SVC%[_-]"$ENV_NAME"}"               # strip trailing _<env> / -<env>
+fi
+
+# ── current user + their most recent commit on the branch ──
 CURRENT_USER="-"
 [[ -n "$_GH_BIN" ]] && CURRENT_USER=$("$_GH_BIN" api user -q .login 2>/dev/null || echo "-")
-if [[ "$COMMIT_AUTHOR" != "-" && "$CURRENT_USER" != "-" && "$COMMIT_AUTHOR" != "$CURRENT_USER" ]]; then
+USER_LAST_SHA="-"
+if [[ -n "$_GH_BIN" && "$CURRENT_USER" != "-" ]]; then
+  USER_LAST_SHA=$("$_GH_BIN" api "repos/${PROJECT_SLUG#*/}/commits?sha=$BRANCH&author=$CURRENT_USER&per_page=1" \
+    --jq '.[0].sha // "-"' 2>/dev/null | tr -d '\r' || echo "-")
+fi
+[[ -z "$USER_LAST_SHA" ]] && USER_LAST_SHA="-"
+[[ "$USER_LAST_SHA" != "-" ]] && echo "Your last commit on $BRANCH ($CURRENT_USER): ${USER_LAST_SHA:0:7}"
+
+# ── reasons that require confirmation ──
+# The gate compares the SERVICE's latest workflow (the target commit, which is the
+# newest change to the service) against the workflow of YOUR most recent commit on
+# the branch. A commit maps 1:1 to a pipeline, so equal SHAs == same workflow.
+CONFIRM_REASONS=()
+if [[ "$OWN_SHA" != "-" && "$USER_LAST_SHA" != "-" && "$OWN_SHA" != "$USER_LAST_SHA" ]]; then
+  CONFIRM_REASONS+=("the service's latest change (${OWN_SHA:0:7}, author ${COMMIT_AUTHOR}) is NOT your last commit (${USER_LAST_SHA:0:7})")
+fi
+# Always: the target commit must actually change the service being deployed.
+if [[ -n "$SVC" ]]; then
+  case ",$CHANGED_SVCS," in
+    *",$SVC,"*) : ;;                          # ok — service is among the changed paths
+    *) CONFIRM_REASONS+=("target commit ${OWN_SHA:0:7} did NOT change service '$SVC' (changed: ${CHANGED_SVCS:-none}) — deploying it would be a no-op") ;;
+  esac
+fi
+
+if (( ${#CONFIRM_REASONS[@]} > 0 )); then
   if [[ -z "$ASSUME_YES" ]]; then
-    echo "error: target commit ${OWN_SHA:0:7} was authored by '$COMMIT_AUTHOR', not you ('$CURRENT_USER')." >&2
-    echo "  It changed: ${CHANGED_SVCS:-(no services/ paths)}." >&2
-    echo "  Confirm this is intended, then re-run the same command with --yes." >&2
+    echo "error: this deploy needs confirmation:" >&2
+    for _r in "${CONFIRM_REASONS[@]}"; do echo "  - $_r" >&2; done
+    echo "  Confirm it is intended, then re-run the same command with --yes." >&2
     exit 12
   fi
-  echo "Commit author: $COMMIT_AUTHOR (NOT you — proceeding, --yes given)."
-elif [[ "$COMMIT_AUTHOR" != "-" ]]; then
-  echo "Commit author: $COMMIT_AUTHOR (you)."
+  echo "Proceeding despite confirmation reasons (--yes):"
+  for _r in "${CONFIRM_REASONS[@]}"; do echo "  - $_r"; done
+else
+  echo "OK — the service's latest change is your last commit${SVC:+ and it changed '$SVC'}; deploying directly."
 fi
 
 # ─── choose the workflow (the one that contains a deploy job) ─────────────────
