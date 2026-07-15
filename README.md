@@ -17,6 +17,7 @@ installed with the core pack — install it separately.
 - `ci-deploy`
 - `clean-my-mac`
 - `remote-github-pr`
+- `pr-autopilot` — take an open PR through CI fixes + human review comments to a squash-merge, then deploy the service to an environment via `ci-deploy`
 
 `vault-skills` (optional — requires the Vault MCP integration):
 
@@ -39,7 +40,7 @@ installed with the core pack — install it separately.
 plugins/awesome-skills/                # core pack
   .codex-plugin/plugin.json            # Codex plugin manifest
   .claude-plugin/plugin.json           # Claude Code plugin manifest
-  skills/                              # ci-deploy, clean-my-mac, remote-github-pr
+  skills/                              # ci-deploy, clean-my-mac, remote-github-pr, pr-autopilot
 plugins/vault-skills/                  # optional Vault pack
   .codex-plugin/plugin.json
   .claude-plugin/plugin.json

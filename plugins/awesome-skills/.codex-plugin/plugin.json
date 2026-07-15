@@ -1,6 +1,6 @@
 {
   "name": "awesome-skills",
-  "version": "0.1.23",
+  "version": "0.1.24",
   "description": "Norman's shared skill pack for Codex and Claude Code.",
   "author": {
     "name": "Norman",
@@ -31,7 +31,8 @@
       "Use $vault-share to share a Vault secret safely.",
       "Use $vault-web-ui to open the Vault Web UI.",
       "Use $clean-my-mac to find safe cleanup candidates.",
-      "Use $ci-deploy to deploy the current project to an environment via CircleCI."
+      "Use $ci-deploy to deploy the current project to an environment via CircleCI.",
+      "Use $pr-autopilot to take an open PR through CI fixes and human review comments to a squash-merge, then deploy the service to an environment via ci-deploy."
     ],
     "brandColor": "#2563EB"
   }
