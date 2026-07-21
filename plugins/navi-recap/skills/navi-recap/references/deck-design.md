@@ -37,6 +37,7 @@ re-build it. Listed so you know what's there (and what not to break):
 - Progress bar + `NN / NN` mono counter (`.nr-bar` / `.nr-counter`).
 - Deep links: reads `#N` on load and on `hashchange`, plus `?s=N` fallback.
 - `T` cycles all 37 themes (with a brief toast); choice persists to localStorage.
+  `0` jumps back to the default theme (navi-signal).
 - Staggered reveals: elements carry `class="rv" style="--d:n"`;
   `.slide.is-active .rv` animates with delay `calc(var(--d)*80ms)`.
 
