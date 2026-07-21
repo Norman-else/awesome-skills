@@ -1,0 +1,25 @@
+{
+  "name": "product-recap",
+  "version": "0.1.3",
+  "description": "Turn one or more repos' git history into a product-evolution story and a single-file HTML slide deck. Run from any directory; always recaps the canonical master branch. A local clone is mined only when it's on master; if it's on another branch, or cwd is not a repo (resolve the repo from natural language against the Mercaso org), it reads master from the remote instead. Merge sibling repos into one deck, scope to a sub-path, pick a time window (open-ended or a closed range); verify flows in code, narrate for non-engineers, build and visually verify the deck.",
+  "keywords": [
+    "skills",
+    "codex",
+    "claude-code",
+    "git",
+    "recap",
+    "slides",
+    "presentation"
+  ],
+  "author": "Norman",
+  "homepage": "https://github.com/Norman-else/awesome-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Product Recap",
+    "shortDescription": "Git history → product story → HTML slide deck (any repo).",
+    "longDescription": "Summarize a window of git commits from one or more local repos into a non-engineer-friendly product-evolution story, with code-verified flow descriptions, then render it as a single-file HTML slide deck with built-in macOS rendering verification. Runs from any directory, mines the canonical branch (origin/default) so the checkout branch doesn't matter, merges sibling repos into one deck, and can scope to a sub-path.",
+    "developerName": "Norman",
+    "websiteURL": "https://github.com/Norman-else/awesome-skills"
+  }
+}

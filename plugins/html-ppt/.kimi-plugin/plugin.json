@@ -1,0 +1,26 @@
+{
+  "name": "html-ppt",
+  "version": "0.1.0",
+  "description": "HTML PPT Studio — author professional static HTML presentations driven by templates: 36 themes, 31 layouts, 27 CSS + 20 canvas-FX animations, a token-based design system, and a keyboard-navigable presenter mode. Vendored from lewislulu/html-ppt-skill (MIT).",
+  "keywords": [
+    "skills",
+    "codex",
+    "claude-code",
+    "ppt",
+    "slides",
+    "presentation",
+    "html",
+    "deck"
+  ],
+  "author": "Norman",
+  "homepage": "https://github.com/Norman-else/awesome-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "HTML PPT Studio",
+    "shortDescription": "Author professional HTML slide decks from templates.",
+    "longDescription": "Author professional static HTML presentations as standalone files: 36 themes, 31 layouts, 27 CSS + 20 canvas-FX animations, and a shared token-based design system in assets/base.css. Includes a keyboard-navigable presenter mode (press S) and helper scripts for scaffolding (new-deck.sh) and rendering (render.sh). Vendored from lewislulu/html-ppt-skill under the MIT License.",
+    "developerName": "lewis (upstream), packaged by Norman",
+    "websiteURL": "https://github.com/lewislulu/html-ppt-skill"
+  }
+}

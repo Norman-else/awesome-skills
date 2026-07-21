@@ -1,0 +1,40 @@
+{
+  "version": "2",
+  "plugins": [
+    {
+      "id": "awesome-skills",
+      "displayName": "Awesome Skills",
+      "source": "./plugins/awesome-skills"
+    },
+    {
+      "id": "vault-skills",
+      "displayName": "Vault Skills",
+      "source": "./plugins/vault-skills"
+    },
+    {
+      "id": "navi-testing",
+      "displayName": "Navi Testing",
+      "source": "./plugins/navi-testing"
+    },
+    {
+      "id": "vpn-skills",
+      "displayName": "VPN Skills",
+      "source": "./plugins/vpn-skills"
+    },
+    {
+      "id": "navi-recap",
+      "displayName": "Navi Recap",
+      "source": "./plugins/navi-recap"
+    },
+    {
+      "id": "product-recap",
+      "displayName": "Product Recap",
+      "source": "./plugins/product-recap"
+    },
+    {
+      "id": "html-ppt",
+      "displayName": "HTML PPT Studio",
+      "source": "./plugins/html-ppt"
+    }
+  ]
+}

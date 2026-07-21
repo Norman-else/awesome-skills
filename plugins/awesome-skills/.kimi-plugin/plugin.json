@@ -1,0 +1,22 @@
+{
+  "name": "awesome-skills",
+  "version": "0.1.24",
+  "description": "Norman's shared skill pack for Codex and Claude Code.",
+  "keywords": [
+    "skills",
+    "codex",
+    "claude-code",
+    "automation"
+  ],
+  "author": "Norman",
+  "homepage": "https://github.com/Norman-else/awesome-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Awesome Skills",
+    "shortDescription": "Shared local skills for Codex and Claude Code.",
+    "longDescription": "A portable skill pack that keeps Norman's Codex and Claude Code skills in one versioned repository instead of copying them between client-specific directories.",
+    "developerName": "Norman",
+    "websiteURL": "https://github.com/Norman-else/awesome-skills"
+  }
+}

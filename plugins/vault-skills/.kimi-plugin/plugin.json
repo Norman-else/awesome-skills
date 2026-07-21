@@ -1,0 +1,22 @@
+{
+  "name": "vault-skills",
+  "version": "0.2.1",
+  "description": "Optional Vault skills (share secrets to Slack, open Vault Web UI). Requires the Vault MCP integration.",
+  "keywords": [
+    "skills",
+    "codex",
+    "claude-code",
+    "vault"
+  ],
+  "author": "Norman",
+  "homepage": "https://github.com/Norman-else/awesome-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Vault Skills",
+    "shortDescription": "Optional Vault helpers for Codex and Claude Code.",
+    "longDescription": "Optional, environment-specific Vault skills kept separate from the core pack so users who don't run Vault don't install them. Requires the Vault MCP integration to be configured.",
+    "developerName": "Norman",
+    "websiteURL": "https://github.com/Norman-else/awesome-skills"
+  }
+}
