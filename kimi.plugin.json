@@ -1,0 +1,29 @@
+{
+  "name": "awesome-skills",
+  "version": "1.0.0",
+  "description": "Norman's skill pack bundle for Kimi Code: installs every plugin in this repo (awesome-skills core, html-ppt, navi-recap, navi-testing, product-recap, vault-skills, vpn-skills) as one plugin. Kimi Code's GitHub install only reads a repo-root manifest, so this bundles the per-plugin packages under plugins/.",
+  "keywords": [
+    "skills",
+    "kimi-code",
+    "codex",
+    "claude-code"
+  ],
+  "author": "Norman",
+  "homepage": "https://github.com/Norman-else/awesome-skills",
+  "license": "MIT",
+  "skills": [
+    "./plugins/awesome-skills/skills/",
+    "./plugins/html-ppt/skills/",
+    "./plugins/navi-recap/skills/",
+    "./plugins/navi-testing/skills/",
+    "./plugins/product-recap/skills/",
+    "./plugins/vault-skills/skills/",
+    "./plugins/vpn-skills/skills/"
+  ],
+  "interface": {
+    "displayName": "Awesome Skills",
+    "shortDescription": "All of Norman's skills as one Kimi Code plugin.",
+    "developerName": "Norman",
+    "websiteURL": "https://github.com/Norman-else/awesome-skills"
+  }
+}
