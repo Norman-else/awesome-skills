@@ -1,13 +1,13 @@
 ---
 name: vault-share
-description: Securely send a Vault secret or dynamic database credential to a Slack user by private DM without exposing the secret content in chat. Use when Codex needs to share credentials from Vault with a teammate in Slack, especially for requests like "share secret X with Y", "DM the db creds to Alice", "send dev db to Norman", "process the latest DB credential request", "process the pending DB credential requests" (handles multiple unprocessed requests for different services/recipients, not just the newest), or terse slash-style input such as "vault-share ENV TYPE TARGET USER" and "vault-share PATH USER".
+description: Securely send a Vault secret or dynamic database credential to a Slack user by private DM without exposing the secret content in chat. Supports sharing only a subset of a KV secret's keys. Use when Codex needs to share credentials from Vault with a teammate in Slack, especially for requests like "share secret X with Y", "share only DB_HOST and DB_PORT of X with Y", "DM the db creds to Alice", "send dev db to Norman", "process the latest DB credential request", "process the pending DB credential requests" (handles multiple unprocessed requests for different services/recipients, not just the newest), or terse slash-style input such as "vault-share ENV TYPE TARGET USER" and "vault-share PATH USER".
 ---
 
 # Vault Share
 
 ## Overview
 
-Use this skill to route a Vault secret directly to a Slack DM while keeping the secret out of the conversation. User-supplied requests are authoritative: when the current user prompt explicitly identifies the Vault target and Slack recipient, parse and execute that request directly without checking `database-credentials-ops`. Only check `database-credentials-ops` when the user asks to process DB credential requests, asks to check Slack, or does not provide enough request details to resolve the target and recipient. Use `mcp__mcp_vault__vault_login` first whenever the resolved request names an environment, or when the share tool reports that authentication is missing. Then use `mcp__mcp_vault__vault_share_secret` to send the secret. For Slack-derived workflow requests, mark the source request with 👀 when processing begins and ✅ after the share succeeds. The response should confirm delivery status without printing secret material.
+Use this skill to route a Vault secret directly to a Slack DM while keeping the secret out of the conversation. User-supplied requests are authoritative: when the current user prompt explicitly identifies the Vault target and Slack recipient, parse and execute that request directly without checking `database-credentials-ops`. Only check `database-credentials-ops` when the user asks to process DB credential requests, asks to check Slack, or does not provide enough request details to resolve the target and recipient. Use `mcp__mcp_vault__vault_login` first whenever the resolved request names an environment, or when the share tool reports that authentication is missing. Then use `mcp__mcp_vault__vault_share_secret` to send the secret. For KV secrets the user may restrict the share to specific keys via the `keys` parameter; database credentials are always sent in full. For Slack-derived workflow requests, mark the source request with 👀 when processing begins and ✅ after the share succeeds. The response should confirm delivery status without printing secret material.
 
 When the user asks to process Slack DB requests, there may be MORE THAN ONE unprocessed request for different services or recipients. Always enumerate the full set of unprocessed requests via `mcp__mcp_vault__vault_get_pending_db_credential_requests` instead of handling only the newest one. The dedicated tool returns a deduplicated list (collapsing repeated requests for the same environment + service + recipient) split into fresh `pending_requests` and older `stale_requests`. Process the fresh ones after confirming the batch with the operator; treat stale ones individually with explicit per-item confirmation.
 
@@ -72,6 +72,7 @@ When this skill is invoked with no extra user-provided target, recipient, or pat
 - Recognize secret types from the fixed set `db` and `kv`.
 - Recognize Slack workflow fields from message text or structured blocks, especially `Database: SERVICE`, `Environment: ENV`, and `Please provide the DB credential to @USER`.
 - Treat filler words such as `send`, `share`, and `to` as optional noise.
+- Recognize key-subset phrasing such as `only KEY1 and KEY2`, `just the KEY fields`, `only send KEY1/KEY2`, or an explicit key list after the path, and map it to the `keys` parameter. Key subsets apply to KV secrets only.
 - Treat the remaining unmatched token or token tail as the Slack user only when that interpretation is unambiguous.
 - If two interpretations are plausible, do not send anything yet. Ask a short clarification question instead.
 
@@ -93,6 +94,8 @@ When this skill is invoked with no extra user-provided target, recipient, or pat
 - If the user provides a path starting with `secret/`, call the tool with `secret_type: kv`, `mount_point: secret`, and strip the leading `secret/` from the `path` field.
 - If the user explicitly states a non-`secret` KV mount, use that mount as `mount_point` and pass the remaining subpath as `path`.
 - Otherwise default to `secret_type: kv`, `mount_point: secret`, and pass the provided path unchanged.
+- If the user names specific keys of a KV secret (for example `only DB_HOST and DB_PORT`), pass them as the `keys` array so only those keys are sent. Never pass `keys` for `secret_type: db`; database credentials are always sent in full and have their own workflow.
+- If the tool result includes `missing_keys`, relay the missing key names (names only, never values) so the user knows those keys were not sent. If the share fails because none of the requested keys exist, report the `available_keys` names and ask the user to pick from them.
 - Pass `slack_user` exactly as the user supplied it unless they explicitly ask for a different Slack identity.
 
 ## Response Rules
@@ -134,3 +137,9 @@ When this skill is invoked with no extra user-provided target, recipient, or pat
   Action: call `mcp__mcp_vault__vault_share_secret` with `secret_type: db`, `path: database/creds/reporting-api`, `slack_user: alice`.
 - User request: `vault-share secret/myapp/config to bob`
   Action: call `mcp__mcp_vault__vault_share_secret` with `secret_type: kv`, `mount_point: secret`, `path: myapp/config`, `slack_user: bob`.
+- User request: `share only DB_HOST and DB_PORT of item-management-service with hansen`
+  Action: call `mcp__mcp_vault__vault_share_secret` with `secret_type: kv`, `mount_point: secret`, `path: item-management-service`, `slack_user: hansen`, `keys: ["DB_HOST", "DB_PORT"]`.
+- User request: `send just the API_TOKEN from secret/myapp/config to alice`
+  Action: call `mcp__mcp_vault__vault_share_secret` with `secret_type: kv`, `mount_point: secret`, `path: myapp/config`, `slack_user: alice`, `keys: ["API_TOKEN"]`.
+- User request: `share only the username of database/creds/reporting-api to alice`
+  Action: do not pass `keys`; explain that database credentials are always shared in full, then confirm whether to send the complete credential.
