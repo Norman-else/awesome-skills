@@ -7,18 +7,18 @@ description: Securely send a Vault secret or dynamic database credential to a Sl
 
 ## Overview
 
-Use this skill to route a Vault secret directly to a Slack DM while keeping the secret out of the conversation. User-supplied requests are authoritative: when the current user prompt explicitly identifies the Vault target and Slack recipient, parse and execute that request directly without checking `database-credentials-ops`. Only check `database-credentials-ops` when the user asks to process DB credential requests, asks to check Slack, or does not provide enough request details to resolve the target and recipient. Use `mcp__mcp_vault__vault_login` first whenever the resolved request names an environment, or when the share tool reports that authentication is missing. Then use `mcp__mcp_vault__vault_share_secret` to send the secret. For KV secrets the user may restrict the share to specific keys via the `keys` parameter; database credentials are always sent in full. For Slack-derived workflow requests, mark the source request with 👀 when processing begins and ✅ after the share succeeds. The response should confirm delivery status without printing secret material.
+Use this skill to route a Vault secret directly to a Slack DM while keeping the secret out of the conversation. User-supplied requests are authoritative: when the current user prompt explicitly identifies the Vault target and Slack recipient, parse and execute that request directly without checking `infra-vault-ops`. Only check `infra-vault-ops` when the user asks to process DB credential requests, asks to check Slack, or does not provide enough request details to resolve the target and recipient. Use `mcp__mcp_vault__vault_login` first whenever the resolved request names an environment, or when the share tool reports that authentication is missing. Then use `mcp__mcp_vault__vault_share_secret` to send the secret. For KV secrets the user may restrict the share to specific keys via the `keys` parameter; database credentials are always sent in full. For Slack-derived workflow requests, mark the source request with 👀 when processing begins and ✅ after the share succeeds. The response should confirm delivery status without printing secret material.
 
 When the user asks to process Slack DB requests, there may be MORE THAN ONE unprocessed request for different services or recipients. Always enumerate the full set of unprocessed requests via `mcp__mcp_vault__vault_get_pending_db_credential_requests` instead of handling only the newest one. The dedicated tool returns a deduplicated list (collapsing repeated requests for the same environment + service + recipient) split into fresh `pending_requests` and older `stale_requests`. Process the fresh ones after confirming the batch with the operator; treat stale ones individually with explicit per-item confirmation.
 
-When this skill is invoked with no extra user-provided target, recipient, or path, treat the invocation itself as a request to process ALL unprocessed DB credential workflow requests from `database-credentials-ops`. Do not ask the user to provide a one-line request first.
+When this skill is invoked with no extra user-provided target, recipient, or path, treat the invocation itself as a request to process ALL unprocessed DB credential workflow requests from `infra-vault-ops`. Do not ask the user to provide a one-line request first.
 
 ## Workflow
 
 1. Parse the current user prompt first.
 2. If the prompt explicitly resolves the Vault target and Slack recipient with high confidence, skip Slack DB request preflight and use the user-provided request as the resolved input.
-3. If the invocation has no explicit target and recipient, immediately run the Slack DB request preflight in `database-credentials-ops`; do not ask for shorthand examples first.
-4. Run the Slack DB request preflight in `database-credentials-ops` when the user asks to process DB credential requests, asks to check Slack, or leaves the Vault target or Slack recipient unresolved.
+3. If the invocation has no explicit target and recipient, immediately run the Slack DB request preflight in `infra-vault-ops`; do not ask for shorthand examples first.
+4. Run the Slack DB request preflight in `infra-vault-ops` when the user asks to process DB credential requests, asks to check Slack, or leaves the Vault target or Slack recipient unresolved.
 5. When preflight is required, enumerate ALL unprocessed requests, present them, process each fresh one, and overlay any explicit user-supplied fields as intentional overrides. Process the requests one at a time; never collapse multiple distinct services or recipients into a single share.
 6. Accept natural language, slash-style input, or terse positional input such as `dev db item-management-service Norman` when the user prompt or required Slack preflight does not provide every required field.
 7. If either the Vault path or Slack user is missing after combining available fields, ask only for the missing field.
@@ -56,7 +56,7 @@ When this skill is invoked with no extra user-provided target, recipient, or pat
 
 - Requests in `stale_requests` are older than the fresh window (`age.tier` is `stale`). Never include them in the auto-processed batch. List them separately and process a stale request only after the operator explicitly confirms that specific one.
 - The tool omits requests already handled with high confidence. A returned request whose `status.already_processed` is `true` (i.e. `possibly_processed`) means the match was only medium confidence — do not send it automatically; ask the operator to confirm before sharing.
-- If `pending_requests` and `stale_requests` are both empty, report that no unprocessed DB credential request was found in `database-credentials-ops`. Do not call `mcp__mcp_vault__vault_login` or `mcp__mcp_vault__vault_share_secret`.
+- If `pending_requests` and `stale_requests` are both empty, report that no unprocessed DB credential request was found in `infra-vault-ops`. Do not call `mcp__mcp_vault__vault_login` or `mcp__mcp_vault__vault_share_secret`.
 
 ### Per-request validation
 
