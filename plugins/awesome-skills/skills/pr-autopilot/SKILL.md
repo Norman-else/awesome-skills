@@ -1,22 +1,18 @@
 ---
 name: pr-autopilot
 description: >-
-  After a PR already exists, drive it to merged-and-deployed on autopilot. Polls the
-  PR's CI checks and human review comments in a loop: diagnoses and fixes failing CI,
-  applies the code changes requested by HUMAN reviewers (ignoring all bot comments,
-  and always excluding the literal "bugbot run" trigger), commits and pushes each
-  round, waits for the required human approval, then does a Squash-and-Merge into the
-  base branch and immediately deploys the merged base branch to a chosen environment
-  by invoking the ci-deploy skill (auto-detecting monorepo services via --service).
-  Use this WHENEVER the user — once a PR is open — wants it watched, fixed, merged,
-  and shipped hands-off: phrases like "盯着这个PR处理完评论就合并然后部署到sat",
+  After a PR already exists, drive it to merged-and-deployed on autopilot. Polls its
+  CI checks and human review comments in a loop: fixes failing CI, applies the changes
+  human reviewers ask for, pushes each round, waits for the required approval, then
+  squash-merges into the base branch and deploys that branch to a chosen environment
+  via the ci-deploy skill. Use WHENEVER the user wants an open PR watched, fixed,
+  merged and shipped hands-off: "盯着这个PR处理完评论就合并然后部署到sat",
   "自动合并并部署accounting-service到sat", "auto-merge this PR and deploy to sat",
-  "ship this PR once it's green", "merge and deploy when ready", or invoking
-  /pr-autopilot (Claude) or $pr-autopilot (Codex) with just an environment (the
-  service is auto-detected from the PR's changed files — the user never names it).
-  Also trigger it right after you yourself open a PR and the user asked for the whole
-  flow. Do NOT use for opening a PR (that is a plain gh/commit task) or for a
-  standalone deploy with no PR to merge first (use ci-deploy directly).
+  "ship this PR once it's green", "merge and deploy when ready", or /pr-autopilot
+  (Claude) or $pr-autopilot (Codex) with just an environment. Also trigger it right
+  after you open a PR yourself and the user asked for the whole flow. Do NOT use for
+  opening a PR (that is a plain gh/commit task) or for a standalone deploy with no PR
+  to merge first (use ci-deploy directly).
 ---
 
 # PR Autopilot: watch → fix → merge → deploy
