@@ -2,10 +2,11 @@
 name: pr-autopilot
 description: >-
   After a PR already exists, drive it to merged-and-deployed on autopilot. Polls its
-  CI checks and human review comments in a loop: fixes failing CI, applies the changes
-  human reviewers ask for, pushes each round, waits for the required approval, then
-  squash-merges into the base branch and deploys that branch to a chosen environment
-  via the ci-deploy skill. Use WHENEVER the user wants an open PR watched, fixed,
+  CI checks and review comments in a loop: fixes failing CI, applies the changes
+  human reviewers and the mercoder-dev bot ask for (other bots are ignored), pushes
+  each round, waits for the required approval, then squash-merges into the base branch
+  and deploys that branch to a chosen environment via the ci-deploy skill. Use
+  WHENEVER the user wants an open PR watched, fixed,
   merged and shipped hands-off: "盯着这个PR处理完评论就合并然后部署到sat",
   "自动合并并部署accounting-service到sat", "auto-merge this PR and deploy to sat",
   "ship this PR once it's green", "merge and deploy when ready", or /pr-autopilot
@@ -41,7 +42,7 @@ keep both for Phase C. Phases A–B need neither.
 
 ## The loop (Phase A → B → C)
 
-Announce the plan up front (one line: "watching PR #N, will fix CI + human comments,
+Announce the plan up front (one line: "watching PR #N, will fix CI + review comments,
 wait for approval, squash-merge, then deploy `<service>` to `<env>`"), then run:
 
 ```
@@ -98,12 +99,13 @@ helps structure this).
 4. Commit (`fix: <thing> caught by CI`) and push to the **PR's head branch**.
 5. Re-poll. New checks will run against the new tip.
 
-### Handling review comments — HUMANS ONLY
+### Handling review comments — humans + the mercoder-dev bot
 
-Only apply changes requested by **human** reviewers. Ignore every bot comment
-(CodeRabbit, bugbot, cursor, etc.) and always ignore the literal `bugbot run` trigger.
-Bots surface noise and their own retrigger commands; acting on them causes churn and
-can fight the humans. The human comments are the ones that gate the merge.
+Apply changes requested by **human** reviewers and by the **`mercoder-dev`** bot (its
+reviews are trusted like a human's). Ignore every other bot comment (CodeRabbit,
+bugbot, cursor, etc.) and always ignore the literal `bugbot run` trigger. Other bots
+surface noise and their own retrigger commands; acting on them causes churn and can
+fight the humans.
 
 Fetch unresolved review threads with their author type (GraphQL gives `isResolved` +
 `author.__typename`, which is `Bot` for bot accounts):
@@ -125,12 +127,13 @@ gh api graphql -f query='
            path: .comments.nodes[0].path, body: .comments.nodes[0].body}'
 ```
 
-For each unresolved thread, **keep it only if** `type == "User"` AND the body is not a
-bot trigger (`bugbot run` and similar). Also check top-level issue comments and the
-review summaries (`gh pr view <pr> --json reviews,comments`) for human change-requests
-that aren't inline threads.
+For each unresolved thread, **keep it only if** the body is not a bot trigger
+(`bugbot run` and similar) AND either `type == "User"` OR the author login starts with
+`mercoder-dev` (covers `mercoder-dev` and `mercoder-dev[bot]`). Also check top-level
+issue comments and the review summaries (`gh pr view <pr> --json reviews,comments`)
+for change-requests from humans or mercoder-dev that aren't inline threads.
 
-For each qualifying human comment:
+For each qualifying comment:
 1. Make the requested code change (smallest change that satisfies the ask; if the ask is
    genuinely a judgment call or you disagree on technical grounds, that's a stop
    condition — see below — don't silently comply or silently ignore).
