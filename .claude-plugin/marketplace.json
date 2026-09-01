@@ -23,7 +23,7 @@
       "name": "vault-skills",
       "description": "Optional Vault skills (share secrets to Slack, open Vault Web UI). Install separately; requires the Vault MCP integration.",
       "source": "./plugins/vault-skills",
-      "version": "0.3.1",
+      "version": "0.4.0",
       "category": "productivity",
       "tags": [
         "skills",

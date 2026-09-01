@@ -1,6 +1,6 @@
 ---
 name: vault-share
-description: Securely send a Vault secret or dynamic database credential to a Slack user by private DM without exposing the secret content in chat. Supports sharing only a subset of a KV secret's keys. Use when Codex needs to share credentials from Vault with a teammate in Slack, especially for requests like "share secret X with Y", "share only DB_HOST and DB_PORT of X with Y", "DM the db creds to Alice", "send dev db to Norman", "process the latest DB credential request", "process the pending DB credential requests" (handles multiple unprocessed requests for different services/recipients, not just the newest), or terse slash-style input such as "vault-share ENV TYPE TARGET USER" and "vault-share PATH USER".
+description: Securely send a Vault secret or dynamic database credential to a Slack user by private DM without exposing the secret content in chat. Supports sharing only a subset of a KV secret's keys. Use when Codex needs to share credentials from Vault with a teammate in Slack, especially for requests like "share secret X with Y", "share only DB_HOST and DB_PORT of X with Y", "DM the db creds to Alice", "send dev db to Norman", "process the latest DB credential request", "process the pending DB credential requests" (handles multiple unprocessed requests for different services/recipients, not just the newest), covering for a teammate who is away ("process the requests assigned to Hansen", "Hansen is on leave, handle his DB requests"), or terse slash-style input such as "vault-share ENV TYPE TARGET USER" and "vault-share PATH USER".
 ---
 
 # Vault Share
@@ -37,6 +37,9 @@ When this skill is invoked with no extra user-provided target, recipient, or pat
 - Before any call to `mcp__mcp_vault__vault_login` or `mcp__mcp_vault__vault_share_secret` for a Slack-derived request, call `mcp__mcp_vault__vault_get_pending_db_credential_requests` with `include_stale: true`.
 - Never use Slack connector tools such as `slack_read_channel`, `slack_search_public_and_private`, `slack_search_public`, `slack_read_thread`, or channel search tools for this workflow. The dedicated Vault MCP tool is the privacy boundary: it reads Slack server-side and returns only structured fields, never raw Slack messages or credential values.
 - If `mcp__mcp_vault__vault_get_pending_db_credential_requests` is unavailable, fails, or returns a permission error such as `missing_scope`, stop immediately and report that the dedicated Vault MCP preflight needs to be fixed. Do not fall back to Slack connector tools.
+- By default the tool only returns requests addressed to you. Pass `approver` ONLY when the user explicitly asks you to handle someone else's requests (for example because that person is on leave): `approver` accepts a Slack user ID, a name to look up, or `any` for every request in the channel regardless of approver. Never pass `approver` on your own initiative, and never carry it over to a later invocation the user did not scope that way.
+- When `approver` names a person, treat the batch exactly like your own: present it, confirm, then process each fresh request. Say whose queue you scanned in the confirmation, using the `approver` field returned by the tool.
+- When `approver` is `any`, do NOT batch auto-process. List what was found and confirm each request individually before sharing, because those requests were addressed to no one in particular from your side.
 - Treat the returned `pending_requests` and `stale_requests` arrays as the only source of Slack-derived fields. For each request use `database`, `environment`, `recipient`, `path`, `status`, `age`, and `duplicate_count`; do not ask Slack directly for surrounding channel messages.
 - The tool already deduplicates: requests sharing the same environment + service + recipient are collapsed to the newest one with `duplicate_count` showing how many were merged. Treat each returned entry as a single unit of work; do not re-send for the merged duplicates.
 - For DB workflow requests, set `secret_type: db` and map the database service to `path: database/creds/SERVICE`.
@@ -72,6 +75,8 @@ When this skill is invoked with no extra user-provided target, recipient, or pat
 - Recognize secret types from the fixed set `db` and `kv`.
 - Recognize Slack workflow fields from message text or structured blocks, especially `Database: SERVICE`, `Environment: ENV`, and `Please provide the DB credential to @USER`.
 - Treat filler words such as `send`, `share`, and `to` as optional noise.
+- Recognize covering phrasing such as `process the requests for NAME`, `handle NAME's DB requests`, `NAME is on leave`, `cover for NAME`, `--approver NAME`, or `approver=NAME`, and map NAME to the `approver` parameter of `mcp__mcp_vault__vault_get_pending_db_credential_requests`. Map `all approvers`, `everyone`, or `any approver` to `approver: any`.
+- If the tool reports that the approver name matches multiple Slack users, ask which one instead of guessing.
 - Recognize key-subset phrasing such as `only KEY1 and KEY2`, `just the KEY fields`, `only send KEY1/KEY2`, or an explicit key list after the path, and map it to the `keys` parameter. Key subsets apply to KV secrets only.
 - Treat the remaining unmatched token or token tail as the Slack user only when that interpretation is unambiguous.
 - If two interpretations are plausible, do not send anything yet. Ask a short clarification question instead.
@@ -125,6 +130,8 @@ When this skill is invoked with no extra user-provided target, recipient, or pat
 - User request: `process the latest DB credential request`
   Preflight returns several `pending_requests`.
   Action: process only the first (newest) entry and leave the rest, since the user asked for the latest specifically.
+- User request: `Hansen is on leave, process the DB requests assigned to him`
+  Action: call `mcp__mcp_vault__vault_get_pending_db_credential_requests` with `approver: Hansen` and `include_stale: true`, present the batch noting it is Hansen's queue, confirm, then process each fresh request with the normal 👀 / share / ✅ flow.
 - User request: `dev db item-management-service Norman`
   Action: call `mcp__mcp_vault__vault_login` with `environment: dev`, then call `mcp__mcp_vault__vault_share_secret` with `secret_type: db`, `path: database/creds/item-management-service`, `slack_user: Norman`.
 - User request: `Norman dev db item-management-service`
