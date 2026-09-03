@@ -192,20 +192,24 @@ so its cascade / gate logic and auto-fix loop are reused.
 
    Detect this once (you already read the PR in Phase A) and reuse it; `gh pr view --json
    files` still works after the merge.
-3. **Invoke the ci-deploy skill** for the base branch (its default target is the branch
-   tip, which is now your squash-merge commit). Invoke it the way your client runs skills —
-   `$ci-deploy` on Codex, the ci-deploy skill (`/ci-deploy`) on Claude — passing:
-   - Monorepo: `<env> --service <service>`.
-   - Single service: `<env>`.
+3. **Invoke the ci-deploy skill** for the base branch, naming it explicitly with
+   `--branch <base>` so the deploy targets the squash-merge commit regardless of which
+   branch is checked out. Invoke it the way your client runs skills — `$ci-deploy` on
+   Codex, the ci-deploy skill (`/ci-deploy`) on Claude — passing:
+   - Monorepo: `<env> --branch <base> --service <service>`.
+   - Single service: `<env> --branch <base>`.
    - No environment given: pass none and let ci-deploy resolve or ask (it exits 10 / asks
      when several environments exist).
 
    ci-deploy runs its deploy in the background and reports success or the failure to fix;
    relay its result to the user.
 
-Make sure you are on / targeting the **base branch** for the deploy, not the now-merged
-feature branch. ci-deploy targets the current branch's tip by default, so `git checkout
-<base> && git pull` first (or pass the merge SHA), otherwise you'd deploy a stale tip.
+Target the **base branch**, not the now-merged feature branch — ci-deploy only falls back
+to the checked-out branch when no `--branch` is given, so passing it is what keeps you off
+a stale tip. Do **not** `git checkout <base>`: it is unnecessary (ci-deploy reads
+`origin/<base>` and the CircleCI API, never the working tree) and impossible from a
+worktree whose main clone already has the base branch checked out. Add `--sha <merge-sha>`
+if you want to pin the exact commit.
 
 ## Stop conditions — pause and ask the user
 
