@@ -22,6 +22,7 @@ installed with the core pack — install it separately.
 `vault-skills` (optional — requires the Vault MCP integration):
 
 - `vault-share`
+- `vault-sync-db`
 - `vault-web-ui`
 
 `navi-recap` (optional — install separately):
@@ -44,7 +45,7 @@ plugins/awesome-skills/                # core pack
 plugins/vault-skills/                  # optional Vault pack
   .codex-plugin/plugin.json
   .claude-plugin/plugin.json
-  skills/                              # vault-share, vault-web-ui
+  skills/                              # vault-share, vault-sync-db, vault-web-ui
 ```
 
 ## Install in Codex

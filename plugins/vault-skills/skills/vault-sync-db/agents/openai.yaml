@@ -1,0 +1,10 @@
+interface:
+  display_name: "Vault Sync DB"
+  short_description: "Sync Vault DB creds to the PostgreSQL MCP."
+  default_prompt: "Use $vault-sync-db to sync a service's database credentials into the local PostgreSQL MCP config. Ask for the environment and service if they are not given."
+
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "mcp-vault"
+      description: "Vault MCP server"

@@ -1,7 +1,7 @@
 {
   "name": "vault-skills",
-  "version": "0.4.1",
-  "description": "Optional Vault skills (share secrets to Slack, open Vault Web UI). Requires the Vault MCP integration.",
+  "version": "0.5.0",
+  "description": "Optional Vault skills (share secrets to Slack, sync DB credentials to the PostgreSQL MCP, open Vault Web UI). Requires the Vault MCP integration.",
   "keywords": [
     "skills",
     "codex",
