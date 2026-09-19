@@ -1,6 +1,6 @@
 {
   "name": "vault-skills",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Optional Vault skills (share secrets to Slack, open Vault Web UI). Requires the Vault MCP integration.",
   "keywords": [
     "skills",
